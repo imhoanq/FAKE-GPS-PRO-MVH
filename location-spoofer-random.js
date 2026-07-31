@@ -1,12 +1,3 @@
-#!name=iOS Location Spoofer (Random 1-15m)
-#!desc=Chặn phản hồi định vị Apple, thay bằng vị trí random cách gốc 1-15m. Có thông báo tọa độ + khoảng cách.
-#!homepage=https://github.com/mekos2772/ios-location-spoofer
-
-[Script]
-iOS Location Spoofer Random = type=http-response,pattern=^https?:\/\/(?:gs-loc(?:-cn)?\.apple\.com|gsp-ssl\.ls\.apple\.com|bluedot\.is\.autonavi\.com(?:\.gds\.alibabadns\.com)?)\/clls\/wloc(?:\?.*)?$,requires-body=1,binary-body-mode=1,max-size=1048576,timeout=10,script-path=https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/location-spoofer-random.js,argument=mode=response&horizontalAccuracy=39&verticalAccuracy=1000&altitude=530&debug=false
-
-[MITM]
-hostname = %APPEND% gs-loc.apple.com, gs-loc-cn.apple.com, gsp-ssl.ls.apple.com, bluedot.is.autonavi.com, bluedot.is.autonavi.com.gds.alibabadns.com
 
 /*
  * iOS Location Spoofer - Random Multi Location (1-15m)
