@@ -327,6 +327,7 @@
       var normalized = value.trim().toLowerCase();
       if (normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on") return true;
       if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "off") return false;
+      
     }
     return defaultValue;
   }
@@ -701,58 +702,56 @@
     }
 
     // ===== RANDOM + NOTIFICATION =====
-    var randomLoc = pickRandomLocation();
-    var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
+    var STORE_KEY = "ios_spoofer_last_loc";
 
-    if (typeof $notification !== "undefined") {
-      $notification.post(
-        "📍 Location Spoofer",
-        "Khoảng cách cửa hàng: " + dist + " m",
-        randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7)
-      );
-    }
-
-    var args = readScriptArguments();
-    var config = normalizeConfig({
-      mode: args.mode || "response",
-      latitude: randomLoc.lat,
-      longitude: randomLoc.lng,
-      horizontalAccuracy: args.horizontalAccuracy || 39,
-      verticalAccuracy: args.verticalAccuracy || 1000,
-      altitude: args.altitude || 530,
-      debug: args.debug || false,
-      failOpen: true
-    });
-
-    try {
-      if (!config.enabled) {
-        donePassThrough();
-        return;
-      }
-      if (hasResponse) {
-        prepareResponseBodySync(config);
-        continueResponseRewrite(config);
-        return;
-      }
-      donePassThrough();
-    } catch (err) {
-      if (config.debug) console.log("Location spoofer failed: " + err.message);
-      if (config.failOpen !== false) donePassThrough();
-      else {
-        $done({
-          response: {
-            status: "HTTP/1.1 500 Internal Server Error",
-            headers: { "Content-Type": "text/plain" },
-            body: "location spoofer failed: " + err.message
-          }
-        });
-      }
-    }
+function readLastLocation() {
+  if (typeof $persistentStore === "undefined" || !$persistentStore.read) return null;
+  try {
+    var raw = $persistentStore.read(STORE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
   }
+}
 
-  if (typeof module !== "undefined" && module.exports) {
-    module.exports = {};
+function saveLastLocation(loc) {
+  if (typeof $persistentStore === "undefined" || !$persistentStore.write) return;
+  try {
+    $persistentStore.write(JSON.stringify(loc), STORE_KEY);
+  } catch (e) {}
+}
+
+// Điểm trước đó (lần fake cũ)
+var prevLoc = readLastLocation();
+
+// Điểm mới (sau khi fake)
+var randomLoc = pickRandomLocation();
+var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
+
+if (typeof $notification !== "undefined") {
+  // Thông báo 1: điểm trước
+  if (prevLoc && prevLoc.lat != null && prevLoc.lng != null) {
+    var prevDist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng);
+    $notification.post(
+      "📍 Địa điểm cũ",
+      "Cách cửa hàng: " + prevDist + " m",
+      prevLoc.lat.toFixed(7) + ", " + prevLoc.lng.toFixed(7)
+    );
   } else {
-    runShadowrocket();
+    $notification.post(
+    
+      "Chưa có điểm cũ",
+      "Đây là lần chạy đầu"
+    );
   }
-}());
+
+  // Thông báo 2: điểm sau khi fake
+  $notification.post(
+    "📍 Địa điểm mới",
+    "Cách cửa hàng: " + dist + " m",
+    randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7)
+  );
+}
+
+// Lưu điểm mới để lần sau thành "điểm trước"
+saveLastLocation(randomLoc);
