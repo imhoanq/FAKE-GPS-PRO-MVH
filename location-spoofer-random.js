@@ -707,7 +707,7 @@
     if (typeof $notification !== "undefined") {
       $notification.post(
         "📍 Location Spoofer",
-        "Cách gốc: " + dist + " m",
+        "Khoảng cách cửa hàng: " + dist + " m",
         randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7)
       );
     }
