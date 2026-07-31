@@ -701,8 +701,9 @@
       return;
     }
 
-    // ===== RANDOM + NOTIFICATION =====
-    var STORE_KEY = "ios_spoofer_last_loc";
+// ===== RANDOM + NOTIFICATION =====
+var STORE_KEY = "ios_spoofer_last_loc";
+var NOTIFY_KEY = "ios_spoofer_last_notify_ts";
 
 function readLastLocation() {
   if (typeof $persistentStore === "undefined" || !$persistentStore.read) return null;
@@ -721,15 +722,25 @@ function saveLastLocation(loc) {
   } catch (e) {}
 }
 
-// Điểm trước đó (lần fake cũ)
-var prevLoc = readLastLocation();
+function shouldNotify() {
+  if (typeof $persistentStore === "undefined" || !$persistentStore.read) return true;
+  try {
+    var last = Number($persistentStore.read(NOTIFY_KEY) || 0);
+    var now = Date.now();
+    if (now - last < 8000) return false; // 8 giây chỉ báo 1 lần
+    $persistentStore.write(String(now), NOTIFY_KEY);
+    return true;
+  } catch (e) {
+    return true;
+  }
+}
 
-// Điểm mới (sau khi fake)
+var prevLoc = readLastLocation();
 var randomLoc = pickRandomLocation();
 var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
+var doNotify = shouldNotify();
 
-if (typeof $notification !== "undefined") {
-  // Thông báo 1: điểm trước
+if (doNotify && typeof $notification !== "undefined") {
   if (prevLoc && prevLoc.lat != null && prevLoc.lng != null) {
     var prevDist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng);
     $notification.post(
@@ -739,13 +750,12 @@ if (typeof $notification !== "undefined") {
     );
   } else {
     $notification.post(
-    
+      "📍 Địa điểm cũ",
       "Chưa có điểm cũ",
       "Đây là lần chạy đầu"
     );
   }
 
-  // Thông báo 2: điểm sau khi fake
   $notification.post(
     "📍 Địa điểm mới",
     "Cách cửa hàng: " + dist + " m",
@@ -753,5 +763,4 @@ if (typeof $notification !== "undefined") {
   );
 }
 
-// Lưu điểm mới để lần sau thành "điểm trước"
 saveLastLocation(randomLoc);
