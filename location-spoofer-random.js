@@ -592,7 +592,6 @@
   }
 
   function runShadowrocket() {
-    var hasRequest = typeof $request !== "undefined" && $request != null;
     var hasResponse = typeof $response !== "undefined" && $response != null;
 
     if (!hasResponse) {
@@ -614,27 +613,22 @@
     var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
     var prevLoc = readLastLocation();
 
-    // Gửi thông báo Push Notification
+    // Gửi 1 Push Notification duy nhất gộp điểm cũ & điểm mới để tránh iOS Rate Limit
     if (typeof $notification !== "undefined") {
+      var subtitleText = "Lần chạy đầu tiên";
+      var bodyText = "👉 Mới: " + randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7) + " (" + dist + "m)";
+
       if (prevLoc && prevLoc.lat != null && prevLoc.lng != null) {
         var prevDist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng);
-        $notification.post(
-          "📍 Trước khi fake",
-          "Cách gốc: " + prevDist + " m",
-          prevLoc.lat.toFixed(7) + ", " + prevLoc.lng.toFixed(7)
-        );
-      } else {
-        $notification.post(
-          "📍 Trước khi fake",
-          "Chưa có điểm cũ",
-          "Đây là lần chạy đầu"
-        );
+        subtitleText = "Cũ: " + prevDist + "m ➔ Mới: " + dist + "m";
+        bodyText = "📍 Cũ: " + prevLoc.lat.toFixed(6) + ", " + prevLoc.lng.toFixed(6) + 
+                   "\n📍 Mới: " + randomLoc.lat.toFixed(6) + ", " + randomLoc.lng.toFixed(6);
       }
 
       $notification.post(
-        "📍 Sau khi fake",
-        "Cách gốc: " + dist + " m",
-        randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7)
+        "📍 Fake GPS Location",
+        subtitleText,
+        bodyText
       );
     }
 
