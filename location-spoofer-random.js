@@ -1,39 +1,40 @@
 /*
- * iOS Location Spoofer - Random Multi Location (1-20m)
- * Mỗi lần Tắt/Bật lại Shadowrocket sẽ tự bốc 1 vị trí ngẫu nhiên mới
+ * iOS Location Spoofer - Per-VPN-Session Reset
+ * Tự động tạo tọa độ mới mỗi khi BẬT Shadowrocket.
+ * Cố định tọa độ đó trong suốt thời gian BẬT VPN.
  */
 (function () {
   "use strict";
 
   // ===================== 20 ĐIỂM RANDOM (1 - 20 MÉT SO VỚI GỐC) =====================
   var RANDOM_LOCATIONS = [
-    { lat: 16.0664550, lng: 108.2067300 }, // ~2m
-    { lat: 16.0664150, lng: 108.2067100 }, // ~3m
-    { lat: 16.0664700, lng: 108.2067100 }, // ~4m
-    { lat: 16.0664000, lng: 108.2067500 }, // ~5m
-    { lat: 16.0664850, lng: 108.2067400 }, // ~6m
-    { lat: 16.0663800, lng: 108.2067000 }, // ~7m
-    { lat: 16.0665000, lng: 108.2067000 }, // ~8m
-    { lat: 16.0664334, lng: 108.2068088 }, // ~9m 
-    { lat: 16.0663500, lng: 108.2067500 }, // ~10m
-    { lat: 16.0665200, lng: 108.2067600 }, // ~11m
-    { lat: 16.0663400, lng: 108.2066800 }, // ~12m
-    { lat: 16.0665400, lng: 108.2067000 }, // ~13m
-    { lat: 16.0663100, lng: 108.2067300 }, // ~14m
-    { lat: 16.0665500, lng: 108.2067800 }, // ~15m
-    { lat: 16.0663000, lng: 108.2066700 }, // ~16m
-    { lat: 16.0665700, lng: 108.2067500 }, // ~17m
-    { lat: 16.0662800, lng: 108.2067100 }, // ~18m
-    { lat: 16.0665900, lng: 108.2067000 }, // ~19m
-    { lat: 16.0662600, lng: 108.2067200 }, // ~20m
-    { lat: 16.0664334, lng: 108.2065369 }  // ~20m
+    { lat: 16.0664550, lng: 108.2067300 },
+    { lat: 16.0664150, lng: 108.2067100 },
+    { lat: 16.0664700, lng: 108.2067100 },
+    { lat: 16.0664000, lng: 108.2067500 },
+    { lat: 16.0664850, lng: 108.2067400 },
+    { lat: 16.0663800, lng: 108.2067000 },
+    { lat: 16.0665000, lng: 108.2067000 },
+    { lat: 16.0664334, lng: 108.2068088 },
+    { lat: 16.0663500, lng: 108.2067500 },
+    { lat: 16.0665200, lng: 108.2067600 },
+    { lat: 16.0663400, lng: 108.2066800 },
+    { lat: 16.0665400, lng: 108.2067000 },
+    { lat: 16.0663100, lng: 108.2067300 },
+    { lat: 16.0665500, lng: 108.2067800 },
+    { lat: 16.0663000, lng: 108.2066700 },
+    { lat: 16.0665700, lng: 108.2067500 },
+    { lat: 16.0662800, lng: 108.2067100 },
+    { lat: 16.0665900, lng: 108.2067000 },
+    { lat: 16.0662600, lng: 108.2067200 },
+    { lat: 16.0664334, lng: 108.2065369 }
   ];
 
   var DEFAULT_LAT = 16.0664334;
   var DEFAULT_LNG = 108.2067245;
-
-  // Biến lưu vị trí tạm thời trong 1 lần bật VPN (Memory Cache)
-  var currentSessionLoc = null;
+  
+  // Khoảng thời gian không có kết nối để coi như VPN đã bị tắt (mặc định 60 giây)
+  var VPN_OFF_THRESHOLD_MS = 60 * 1000; 
 
   function pickRandomLocation() {
     return RANDOM_LOCATIONS[Math.floor(Math.random() * RANDOM_LOCATIONS.length)];
@@ -52,23 +53,57 @@
     return Math.round(R * c);
   }
 
+  // ===================== PHÁT HIỆN LẦN BẬT VPN MỚI =====================
+  function getSessionLocation() {
+    if (typeof $persistentStore === "undefined") {
+      return pickRandomLocation();
+    }
+
+    var now = Date.now();
+    var storedLocStr = $persistentStore.read("SPOOF_LOCATION_DATA");
+    var lastTimeStr = $persistentStore.read("SPOOF_LAST_TIME");
+    var lastTime = lastTimeStr ? parseInt(lastTimeStr, 10) : 0;
+
+    // Nếu thời gian từ request cuối > 60s -> Coi như người dùng vừa mới BẬT lại VPN
+    var isNewVpnSession = !lastTime || (now - lastTime > VPN_OFF_THRESHOLD_MS);
+
+    if (!isNewVpnSession && storedLocStr) {
+      try {
+        // Đang trong cùng 1 lần BẬT VPN -> Giữ nguyên tọa độ cũ & cập nhật thời gian
+        $persistentStore.write(now.toString(), "SPOOF_LAST_TIME");
+        return JSON.parse(storedLocStr);
+      } catch (e) {}
+    }
+
+    // Vừa mới BẬT VPN -> Chọn ngẫu nhiên 1 tọa độ mới
+    var newLoc = pickRandomLocation();
+    $persistentStore.write(JSON.stringify(newLoc), "SPOOF_LOCATION_DATA");
+    $persistentStore.write(now.toString(), "SPOOF_LAST_TIME");
+
+    // Bắn thông báo lên màn hình báo điểm mới đã được chọn
+    if (typeof $notification !== "undefined") {
+      var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, newLoc.lat, newLoc.lng);
+      $notification.post(
+        "📍 Bật VPN: Đã chọn tọa độ mới",
+        "Cách gốc: " + dist + "m (" + newLoc.lat.toFixed(5) + ", " + newLoc.lng.toFixed(5) + ")"
+      );
+    }
+
+    return newLoc;
+  }
+
   var DEFAULT_CONFIG = {
     enabled: true,
     mode: "response",
     latitude: DEFAULT_LAT,
     longitude: DEFAULT_LNG,
-    horizontalAccuracy: 39,
-    verticalAccuracy: 1000,
-    altitude: 530,
+    horizontalAccuracy: 15,
+    verticalAccuracy: 10,
+    altitude: 15,
     unknownValue4: 3,
     motionActivityType: 63,
     motionActivityConfidence: 467,
-    failOpen: true,
-    debug: false,
-    dumpRaw: false,
-    dumpHeaders: false,
-    prepareHeaders: false,
-    rawLimit: 0
+    failOpen: true
   };
 
   var APPLE_WLOC_PREFIX = bytesFromArray([0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]);
@@ -493,22 +528,7 @@
     }
 
     try {
-      // Nếu là lần đầu ứng dụng chạy trong đợt bật VPN này -> Chọn 1 điểm mới
-      if (!currentSessionLoc) {
-        currentSessionLoc = pickRandomLocation();
-
-        // Gửi notification báo điểm mới
-        if (typeof $notification !== "undefined") {
-          var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, currentSessionLoc.lat, currentSessionLoc.lng);
-          var latFixed = currentSessionLoc.lat.toFixed(5);
-          var lngFixed = currentSessionLoc.lng.toFixed(5);
-
-          $notification.post(
-            "📍 GPS Spoofer thành công",
-            "Cách cửa hàng: " + dist + "m (" + latFixed + ", " + lngFixed + ")"
-          );
-        }
-      }
+      var currentLoc = getSessionLocation();
 
       var responseBody = messageBodyToBytes($response);
       if (!responseBody || responseBody.length < 2) {
@@ -517,8 +537,8 @@
       }
 
       var responseResult = spoofAppleResponse(responseBody, {
-        latitude: currentSessionLoc.lat,
-        longitude: currentSessionLoc.lng
+        latitude: currentLoc.lat,
+        longitude: currentLoc.lng
       });
 
       doneRewriteResponse(responseResult.response);
