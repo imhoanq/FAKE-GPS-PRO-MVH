@@ -1,5 +1,6 @@
 /*
- * iOS Location Spoofer - Dynamic Jitter & Fixed Notification Cooldown
+ * iOS Location Spoofer - Smart Notification Trigger
+ * Chỉ bắn thông báo khi tọa độ thực sự thay đổi (> 2m) hoặc khi reset VPN.
  */
 (function () {
   "use strict";
@@ -61,18 +62,22 @@
     var baseLoc = pickRandomBaseLocation();
     var finalLoc = addJitter(baseLoc);
 
-    // Xử lý logic thông báo theo thời gian (Cooldown 10s)
+    // Xử lý thông báo thông minh: So sánh khoảng cách dịch chuyển so với lần thông báo trước
     if (typeof $persistentStore !== "undefined" && typeof $notification !== "undefined") {
-      var lastNotifyTime = parseInt($persistentStore.read("LAST_NOTIFY_TIME") || "0", 10);
-      var now = Date.now();
+      var lastLat = parseFloat($persistentStore.read("LAST_NOTIFY_LAT") || "0");
+      var lastLng = parseFloat($persistentStore.read("LAST_NOTIFY_LNG") || "0");
 
-      // Chỉ gửi thông báo nếu lần gửi trước đã cách quá 10 giây (tránh spam)
-      if (now - lastNotifyTime > 10000) {
-        $persistentStore.write(now.toString(), "LAST_NOTIFY_TIME");
-        var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, finalLoc.lat, finalLoc.lng);
+      var movedDistance = distanceMeters(lastLat, lastLng, finalLoc.lat, finalLoc.lng);
+
+      // Chỉ gửi thông báo nếu vị trí mới lệch so with điểm đã thông báo trước đó trên 2 mét
+      if (movedDistance > 2) {
+        $persistentStore.write(finalLoc.lat.toString(), "LAST_NOTIFY_LAT");
+        $persistentStore.write(finalLoc.lng.toString(), "LAST_NOTIFY_LNG");
+
+        var distFromTarget = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, finalLoc.lat, finalLoc.lng);
         $notification.post(
           "📍 GPS SPOOFER ACTIVE!",
-          "Cách cửa hàng: " + dist + "m (" + finalLoc.lat.toFixed(5) + ", " + finalLoc.lng.toFixed(5) + ")"
+          "Cách cửa hàng: " + distFromTarget + "m (" + finalLoc.lat.toFixed(5) + ", " + finalLoc.lng.toFixed(5) + ")"
         );
       }
     }
@@ -334,7 +339,7 @@
         parts.push(field.raw);
       }
     }
-    if (!patchedLocation) parts.push(makeLengthDelimitedField(5, patchLocation(bytesFromArray([]), config)));
+    if (!patchedLocation) parts.push(makeLengthDelimitedField(2, patchLocation(bytesFromArray([]), config)));
     return concatBytes(parts);
   }
 
