@@ -1,3 +1,4 @@
+
 /*
  * iOS Location Spoofer - Random Multi Location (1-15m)
  * Có Notification hiện tọa độ + khoảng cách (mét) so với gốc
@@ -6,7 +7,7 @@
 (function () {
   "use strict";
 
-  // ===================== 20 ĐIỂM (CÁCH A < 36m => CÁCH GỐC < 45m) =====================
+  // ===================== 10 ĐIỂM RANDOM 1-15m =====================
   var RANDOM_LOCATIONS = [
     { lat: 16.0664500, lng: 108.2067400 }, // Cách A ~2m  (Cách Gốc max ~11m)
     { lat: 16.0663850, lng: 108.2066800 }, // Cách A ~7m  (Cách Gốc max ~16m)
@@ -118,6 +119,38 @@
     var out = new Uint8Array(value.length);
     for (var i = 0; i < value.length; i += 1) out[i] = value.charCodeAt(i) & 0xff;
     return out;
+  }
+
+  function bytesToBinaryString(bytes) {
+    var chunkSize = 0x8000, chunks = [];
+    for (var i = 0; i < bytes.length; i += chunkSize) {
+      var chunk = bytes.subarray(i, i + chunkSize);
+      chunks.push(String.fromCharCode.apply(null, Array.prototype.slice.call(chunk)));
+    }
+    return chunks.join("");
+  }
+
+  function bytesToBase64(bytes) {
+    var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    var out = "";
+    for (var i = 0; i < bytes.length; i += 3) {
+      var b0 = bytes[i];
+      var b1 = i + 1 < bytes.length ? bytes[i + 1] : 0;
+      var b2 = i + 2 < bytes.length ? bytes[i + 2] : 0;
+      var triplet = (b0 << 16) | (b1 << 8) | b2;
+      out += alphabet[(triplet >> 18) & 0x3f];
+      out += alphabet[(triplet >> 12) & 0x3f];
+      out += i + 1 < bytes.length ? alphabet[(triplet >> 6) & 0x3f] : "=";
+      out += i + 2 < bytes.length ? alphabet[triplet & 0x3f] : "=";
+    }
+    return out;
+  }
+
+  function hexPreview(bytes, limit) {
+    if (!bytes) return "<none>";
+    var out = [], max = Math.min(bytes.length, limit || 16);
+    for (var i = 0; i < max; i += 1) out.push(("0" + bytes[i].toString(16)).slice(-2));
+    return out.join("");
   }
 
   function bodyToBytes(body) {
@@ -239,8 +272,59 @@
     return fields;
   }
 
+  function firstFieldByNumber(fields, fieldNumber) {
+    for (var i = 0; i < fields.length; i += 1) {
+      if (fields[i].fieldNumber === fieldNumber) return fields[i];
+    }
+    return null;
+  }
+
+  function signedVarintFieldValue(field) {
+    if (!field || field.wireType !== 0) return null;
+    return BigInt.asIntN(64, decodeVarint(field.valueBytes, 0).value);
+  }
+
+  function locationSummary(locationPayload) {
+    try {
+      var fields = parseFields(locationPayload);
+      var lat = signedVarintFieldValue(firstFieldByNumber(fields, 1));
+      var lon = signedVarintFieldValue(firstFieldByNumber(fields, 2));
+      if (lat == null || lon == null) return "<missing>";
+      return (Number(lat) / 100000000).toFixed(8) + "," + (Number(lon) / 100000000).toFixed(8);
+    } catch (err) {
+      return "<parse-failed:" + err.message + ">";
+    }
+  }
+
+  function patchedPayloadSummary(payload) {
+    try {
+      var rootFields = parseFields(payload);
+      var parts = [];
+      var wifi = firstFieldByNumber(rootFields, 2);
+      if (wifi && wifi.wireType === 2) {
+        var wifiLocation = firstFieldByNumber(parseFields(wifi.valueBytes), 2);
+        parts.push("firstWifi=" + (wifiLocation ? locationSummary(wifiLocation.valueBytes) : "<missing>"));
+      }
+      var cell = firstCellResponseField(rootFields);
+      if (cell && cell.wireType === 2) {
+        var cellLocation = firstFieldByNumber(parseFields(cell.valueBytes), 5);
+        parts.push("firstCell=" + (cellLocation ? locationSummary(cellLocation.valueBytes) : "<missing>"));
+      }
+      return parts.length ? parts.join(", ") : "no wifi/cell location fields";
+    } catch (err) {
+      return "summary failed: " + err.message;
+    }
+  }
+
   function isCellResponseField(fieldNumber) {
     return CELL_RESPONSE_FIELDS[fieldNumber] === true;
+  }
+
+  function firstCellResponseField(fields) {
+    for (var i = 0; i < fields.length; i += 1) {
+      if (isCellResponseField(fields[i].fieldNumber)) return fields[i];
+    }
+    return null;
   }
 
   function coordToInt(value) {
@@ -253,6 +337,7 @@
       var normalized = value.trim().toLowerCase();
       if (normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on") return true;
       if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "off") return false;
+      
     }
     return defaultValue;
   }
@@ -513,8 +598,21 @@
     return out;
   }
 
+  function isGzipBytes(bytes) {
+    return bytes && bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+  }
+
   function isLoonRuntime() {
     return typeof $loon !== "undefined";
+  }
+
+  function headerValue(headers, name) {
+    if (!headers) return undefined;
+    var lower = name.toLowerCase();
+    for (var key in headers) {
+      if (Object.prototype.hasOwnProperty.call(headers, key) && key.toLowerCase() === lower) return headers[key];
+    }
+    return undefined;
   }
 
   function headersWithBinaryBody(sourceHeaders, length) {
@@ -531,6 +629,37 @@
     headers["Content-Type"] = "application/octet-stream";
     headers["Content-Length"] = String(length);
     return headers;
+  }
+
+  function decompressBody(body, contentEncoding) {
+    if (body == null) return body;
+    var enc = contentEncoding ? String(contentEncoding).toLowerCase() : "";
+    if (enc === "identity" || enc === "") return body;
+    try {
+      if (enc.indexOf("gzip") >= 0 && typeof $utils !== "undefined" && $utils.ungzip) return $utils.ungzip(body);
+      if (enc.indexOf("deflate") >= 0 && typeof $utils !== "undefined" && $utils.inflate) return $utils.inflate(body);
+      if (enc.indexOf("br") >= 0 && typeof $utils !== "undefined" && $utils.brotliDecompress) return $utils.brotliDecompress(body);
+    } catch (err) {}
+    return body;
+  }
+
+  function prepareResponseBodySync(config) {
+    var respHeaders = ($response && $response.headers) || {};
+    var contentEncoding = headerValue(respHeaders, "Content-Encoding");
+    var rawRespBody = $response && ($response.body != null ? $response.body : $response.bodyBytes);
+    var bytes = bodyToBytes(rawRespBody);
+    if (!bytes || bytes.length < 2) return;
+    if (isGzipBytes(bytes) || (contentEncoding && String(contentEncoding).toLowerCase().indexOf("gzip") >= 0)) {
+      var decoded = bodyToBytes(decompressBody(rawRespBody, contentEncoding || "gzip"));
+      if (decoded && decoded.length > 2 && !isGzipBytes(decoded)) {
+        $response.body = decoded;
+      }
+      return;
+    }
+    if (contentEncoding) {
+      var plain = bodyToBytes(decompressBody(rawRespBody, contentEncoding));
+      if (plain) $response.body = plain;
+    }
   }
 
   function donePassThrough() { $done({}); }
@@ -558,101 +687,80 @@
       donePassThrough();
       return;
     }
-    try {
-      var responseResult = spoofAppleResponse(responseBody, config);
-      doneRewriteResponse(responseResult.response, {
-        wifiCount: responseResult.wifiCount,
-        cellCount: responseResult.cellCount,
-        debug: config.debug,
-        targetLat: config.latitude,
-        targetLng: config.longitude
-      });
-    } catch (e) {
-      donePassThrough();
-    }
-  }
-
-  var STORE_KEY = "ios_spoofer_last_loc";
-
-  function readLastLocation() {
-    if (typeof $persistentStore === "undefined" || !$persistentStore.read) return null;
-    try {
-      var raw = $persistentStore.read(STORE_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function saveLastLocation(loc) {
-    if (typeof $persistentStore === "undefined" || !$persistentStore.write) return;
-    try {
-      $persistentStore.write(JSON.stringify(loc), STORE_KEY);
-    } catch (e) {}
+    var responseResult = spoofAppleResponse(responseBody, config);
+    doneRewriteResponse(responseResult.response, {
+      wifiCount: responseResult.wifiCount,
+      cellCount: responseResult.cellCount,
+      debug: config.debug,
+      targetLat: config.latitude,
+      targetLng: config.longitude
+    });
   }
 
   function runShadowrocket() {
+    var hasRequest = typeof $request !== "undefined" && $request != null;
     var hasResponse = typeof $response !== "undefined" && $response != null;
 
-    if (!hasResponse) {
+    if (!hasRequest && !hasResponse) {
       $done({});
       return;
     }
 
-    // Read argument setup
-    var args = readScriptArguments();
-    var config = normalizeConfig(args);
-
-    // Pick random location
-    var randomLoc = pickRandomLocation();
-    
-    // Gán vị trí random vào config xử lý
-    config.latitude = randomLoc.lat;
-    config.longitude = randomLoc.lng;
-
-    var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
-
-    // Bọc an toàn tuyệt đối khi đọc vị trí cũ
-    var prevLoc = null;
-    try {
-      prevLoc = readLastLocation();
-    } catch (e) {
-      prevLoc = null;
+    if (hasRequest && !hasResponse) {
+      $done({});
+      return;
     }
 
-    // Gửi Push Notification
-    try {
-      if (typeof $notification !== "undefined" && $notification.post) {
-        var subtitleText = "Lần chạy đầu tiên";
-        var bodyText = "👉 Mới: " + randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7) + " (" + dist + "m)";
+var STORE_KEY = "ios_spoofer_last_loc";
 
-        if (prevLoc && prevLoc.lat != null && prevLoc.lng != null) {
-          var prevDist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng);
-          subtitleText = "Cũ: " + prevDist + "m ➔ Mới: " + dist + "m";
-          bodyText = "📍 Cũ: " + prevLoc.lat.toFixed(6) + ", " + prevLoc.lng.toFixed(6) + 
-                     "\n📍 Mới: " + randomLoc.lat.toFixed(6) + ", " + randomLoc.lng.toFixed(6);
-        }
+function readLastLocation() {
+  if (typeof $persistentStore === "undefined" || !$persistentStore.read) return null;
+  try {
+    var raw = $persistentStore.read(STORE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
 
-        $notification.post(
-          "📍 Fake GPS Location",
-          subtitleText,
-          bodyText
-        );
-      }
-    } catch (errNoti) {
-      // Bỏ qua lỗi notification nếu có
-    }
+function saveLastLocation(loc) {
+  if (typeof $persistentStore === "undefined" || !$persistentStore.write) return;
+  try {
+    $persistentStore.write(JSON.stringify(loc), STORE_KEY);
+  } catch (e) {}
+}
 
-    // Lưu lại vị trí cho lần sau
-    try {
-      saveLastLocation(randomLoc);
-    } catch (e) {}
+// Điểm trước đó (lần fake cũ)
+var prevLoc = readLastLocation();
 
-    // Thực thi rewrite gói tin vị trí
-    continueResponseRewrite(config);
+// Điểm mới (sau khi fake)
+var randomLoc = pickRandomLocation();
+var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
+
+if (typeof $notification !== "undefined") {
+  // Thông báo 1: điểm trước
+  if (prevLoc && prevLoc.lat != null && prevLoc.lng != null) {
+    var prevDist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng);
+    $notification.post(
+      "📍 Trước khi fake",
+      "Cách gốc: " + prevDist + " m",
+      prevLoc.lat.toFixed(7) + ", " + prevLoc.lng.toFixed(7)
+    );
+  } else {
+    $notification.post(
+      "📍 Trước khi fake",
+      "Chưa có điểm cũ",
+      "Đây là lần chạy đầu"
+    );
   }
 
-  // Khởi chạy script
-  runShadowrocket();
+  // Thông báo 2: điểm sau khi fake
+  $notification.post(
+    "📍 Sau khi fake",
+    "Cách gốc: " + dist + " m",
+    randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7)
+  );
+}
 
-})();
+// Lưu điểm mới để lần sau thành "điểm trước"
+saveLastLocation(randomLoc);
