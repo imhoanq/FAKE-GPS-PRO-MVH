@@ -1,7 +1,6 @@
 /*
- * iOS Location Spoofer - Per-VPN-Session Reset
- * Tự động tạo tọa độ mới mỗi khi BẬT Shadowrocket.
- * Cố định tọa độ đó trong suốt thời gian BẬT VPN.
+ * iOS Location Spoofer - Always Random On Connection
+ * Tự động chọn tọa độ mới ngay khi có kết nối VPN mới.
  */
 (function () {
   "use strict";
@@ -32,9 +31,6 @@
 
   var DEFAULT_LAT = 16.0664334;
   var DEFAULT_LNG = 108.2067245;
-  
-  // Khoảng thời gian không có kết nối để coi như VPN đã bị tắt (mặc định 60 giây)
-  var VPN_OFF_THRESHOLD_MS = 60 * 1000; 
 
   function pickRandomLocation() {
     return RANDOM_LOCATIONS[Math.floor(Math.random() * RANDOM_LOCATIONS.length)];
@@ -53,39 +49,31 @@
     return Math.round(R * c);
   }
 
-  // ===================== PHÁT HIỆN LẦN BẬT VPN MỚI =====================
+  // ===================== BỐC TỌA ĐỘ MỚI =====================
   function getSessionLocation() {
     if (typeof $persistentStore === "undefined") {
       return pickRandomLocation();
     }
 
-    var now = Date.now();
     var storedLocStr = $persistentStore.read("SPOOF_LOCATION_DATA");
-    var lastTimeStr = $persistentStore.read("SPOOF_LAST_TIME");
-    var lastTime = lastTimeStr ? parseInt(lastTimeStr, 10) : 0;
 
-    // Nếu thời gian từ request cuối > 60s -> Coi như người dùng vừa mới BẬT lại VPN
-    var isNewVpnSession = !lastTime || (now - lastTime > VPN_OFF_THRESHOLD_MS);
-
-    if (!isNewVpnSession && storedLocStr) {
+    // Nếu đã có tọa độ lưu trong phiên làm việc hiện tại của Shadowrocket thì giữ nguyên
+    if (storedLocStr) {
       try {
-        // Đang trong cùng 1 lần BẬT VPN -> Giữ nguyên tọa độ cũ & cập nhật thời gian
-        $persistentStore.write(now.toString(), "SPOOF_LAST_TIME");
         return JSON.parse(storedLocStr);
       } catch (e) {}
     }
 
-    // Vừa mới BẬT VPN -> Chọn ngẫu nhiên 1 tọa độ mới
+    // Nếu chưa có (mới Bật VPN hoặc vừa reset phiên) -> Tạo tọa độ mới ngẫu nhiên
     var newLoc = pickRandomLocation();
     $persistentStore.write(JSON.stringify(newLoc), "SPOOF_LOCATION_DATA");
-    $persistentStore.write(now.toString(), "SPOOF_LAST_TIME");
 
     // Bắn thông báo lên màn hình báo điểm mới đã được chọn
     if (typeof $notification !== "undefined") {
       var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, newLoc.lat, newLoc.lng);
       $notification.post(
-        "📍 Bật VPN: Đã chọn tọa độ mới",
-        "Cách gốc: " + dist + "m (" + newLoc.lat.toFixed(5) + ", " + newLoc.lng.toFixed(5) + ")"
+        "📍 GPS CONNECTED!",
+        "Cách cửa hàng: " + dist + "m (" + newLoc.lat.toFixed(5) + ", " + newLoc.lng.toFixed(5) + ")"
       );
     }
 
