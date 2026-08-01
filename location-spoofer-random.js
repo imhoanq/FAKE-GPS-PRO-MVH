@@ -1,33 +1,36 @@
 /*
- * iOS Location Spoofer - Random Multi Location (1-15m)
- * Có Notification hiện tọa độ + khoảng cách (mét) so với gốc
- * Gốc: 16.0664334, 108.2067245
+ * iOS Location Spoofer - Random Multi Location (1-20m)
+ * Tự động giữ nguyên vị trí trong 5 phút mới đổi điểm mới
  */
 (function () {
   "use strict";
 
-  // ===================== 20 ĐIỂM RANDOM =====================
+  // ===================== THIẾT LẬP THỜI GIAN ĐỔI VỊ TRÍ =====================
+  var CHANGE_INTERVAL_SECONDS = 600; // 300 giây = 5 phút (Bạn có thể sửa thành 60, 600...)
+
+  // ===================== 20 ĐIỂM RANDOM (1 - 20 MÉT SO VỚI GỐC) =====================
+  // ===================== 20 ĐIỂM RANDOM (1 - 20 MÉT SO VỚI GỐC) =====================
   var RANDOM_LOCATIONS = [
-    { lat: 16.0664500, lng: 108.2067400 },
-    { lat: 16.0663850, lng: 108.2066800 },
-    { lat: 16.0665200, lng: 108.2066500 },
-    { lat: 16.0663100, lng: 108.2068100 },
-    { lat: 16.0665800, lng: 108.2067700 },
-    { lat: 16.0662700, lng: 108.2066200 },
-    { lat: 16.0666200, lng: 108.2066100 },
-    { lat: 16.0662200, lng: 108.2068400 },
-    { lat: 16.0666500, lng: 108.2068200 },
-    { lat: 16.0661900, lng: 108.2066100 },
-    { lat: 16.0664334, lng: 108.2070000 },
-    { lat: 16.0666800, lng: 108.2066200 },
-    { lat: 16.0661700, lng: 108.2067700 },
-    { lat: 16.0664334, lng: 108.2064300 },
-    { lat: 16.0667000, lng: 108.2068300 },
-    { lat: 16.0661500, lng: 108.2066500 },
-    { lat: 16.0664800, lng: 108.2070300 },
-    { lat: 16.0667200, lng: 108.2066800 },
-    { lat: 16.0661300, lng: 108.2067800 },
-    { lat: 16.0664334, lng: 108.2063900 }
+    { lat: 16.0664550, lng: 108.2067300 }, // ~2m
+    { lat: 16.0664150, lng: 108.2067100 }, // ~3m
+    { lat: 16.0664700, lng: 108.2067100 }, // ~4m
+    { lat: 16.0664000, lng: 108.2067500 }, // ~5m
+    { lat: 16.0664850, lng: 108.2067400 }, // ~6m
+    { lat: 16.0663800, lng: 108.2067000 }, // ~7m
+    { lat: 16.0665000, lng: 108.2067000 }, // ~8m
+    { lat: 16.0664334, lng: 108.2068088 }, // ~9m 
+    { lat: 16.0663500, lng: 108.2067500 }, // ~10m
+    { lat: 16.0665200, lng: 108.2067600 }, // ~11m
+    { lat: 16.0663400, lng: 108.2066800 }, // ~12m
+    { lat: 16.0665400, lng: 108.2067000 }, // ~13m
+    { lat: 16.0663100, lng: 108.2067300 }, // ~14m
+    { lat: 16.0665500, lng: 108.2067800 }, // ~15m
+    { lat: 16.0663000, lng: 108.2066700 }, // ~16m
+    { lat: 16.0665700, lng: 108.2067500 }, // ~17m
+    { lat: 16.0662800, lng: 108.2067100 }, // ~18m
+    { lat: 16.0665900, lng: 108.2067000 }, // ~19m
+    { lat: 16.0662600, lng: 108.2067200 }, // ~20m
+    { lat: 16.0664334, lng: 108.2065369 }  // ~20m
   ];
 
   var DEFAULT_LAT = 16.0664334;
@@ -491,34 +494,43 @@
     }
 
     try {
-      var STORE_KEY = "ios_spoofer_last_loc";
-      var prevLoc = null;
+      var STORE_LOC_KEY = "spoofer_current_loc";
+      var STORE_TIME_KEY = "spoofer_last_time";
 
-      if (typeof $persistentStore !== "undefined" && $persistentStore.read) {
-        try {
-          var raw = $persistentStore.read(STORE_KEY);
-          prevLoc = raw ? JSON.parse(raw) : null;
-        } catch (e) {}
-      }
+      var now = Math.floor(Date.now() / 1000);
+      var activeLoc = null;
 
-      var randomLoc = pickRandomLocation();
-      var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
+      try {
+        var savedLoc = (typeof $persistentStore !== "undefined" && $persistentStore.read) ? $persistentStore.read(STORE_LOC_KEY) : null;
+        var savedTime = (typeof $persistentStore !== "undefined" && $persistentStore.read) ? $persistentStore.read(STORE_TIME_KEY) : null;
+        var lastTime = savedTime ? parseInt(savedTime, 10) : 0;
 
-      // Gộp 2 Thông báo làm 1 để tránh quá tải IPC làm treo app
-     // Ghi nhận thông báo theo định dạng tối ưu (2 tham số)
-if (typeof $notification !== "undefined") {
-  var latFixed = randomLoc.lat.toFixed(5);
-  var lngFixed = randomLoc.lng.toFixed(5);
+        // Nếu chưa có vị trí hoặc đã quá 5 phút -> Đổi điểm mới và bắn notification
+        if (!savedLoc || (now - lastTime) > CHANGE_INTERVAL_SECONDS) {
+          activeLoc = pickRandomLocation();
 
-  $notification.post(
-    "📍 GPS Spoofer thành công",
-    "Cách cửa hàng: " + dist + "m (" + latFixed + ", " + lngFixed + ")"
-  );
-}
+          if (typeof $persistentStore !== "undefined" && $persistentStore.write) {
+            $persistentStore.write(JSON.stringify(activeLoc), STORE_LOC_KEY);
+            $persistentStore.write(now.toString(), STORE_TIME_KEY);
+          }
 
-      // Save điểm mới
-      if (typeof $persistentStore !== "undefined" && $persistentStore.write) {
-        try { $persistentStore.write(JSON.stringify(randomLoc), STORE_KEY); } catch (e) {}
+          // Gửi thông báo mẫu chuẩn
+          if (typeof $notification !== "undefined") {
+            var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, activeLoc.lat, activeLoc.lng);
+            var latFixed = activeLoc.lat.toFixed(5);
+            var lngFixed = activeLoc.lng.toFixed(5);
+
+            $notification.post(
+              "📍 GPS Spoofer thành công",
+              "Cách cửa hàng: " + dist + "m (" + latFixed + ", " + lngFixed + ")"
+            );
+          }
+        } else {
+          // Trong thời gian 5 phút -> Dùng lại vị trí cũ, không bắn thông báo nữa
+          activeLoc = JSON.parse(savedLoc);
+        }
+      } catch (e) {
+        activeLoc = pickRandomLocation();
       }
 
       var responseBody = messageBodyToBytes($response);
@@ -528,13 +540,12 @@ if (typeof $notification !== "undefined") {
       }
 
       var responseResult = spoofAppleResponse(responseBody, {
-        latitude: randomLoc.lat,
-        longitude: randomLoc.lng
+        latitude: activeLoc.lat,
+        longitude: activeLoc.lng
       });
 
       doneRewriteResponse(responseResult.response);
     } catch (err) {
-      // Bọc Fail-safe để tránh treo kết nối mạng khi đụng gói tin lạ
       donePassThrough();
     }
   }
