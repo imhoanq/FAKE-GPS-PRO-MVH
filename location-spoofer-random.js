@@ -1,4 +1,3 @@
-
 /*
  * iOS Location Spoofer - Random Multi Location (1-15m)
  * Có Notification hiện tọa độ + khoảng cách (mét) so với gốc
@@ -337,7 +336,6 @@
       var normalized = value.trim().toLowerCase();
       if (normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on") return true;
       if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "off") return false;
-      
     }
     return defaultValue;
   }
@@ -562,42 +560,6 @@
     };
   }
 
-  function parseArgumentString(argument) {
-    var result = {};
-    if (!argument || typeof argument !== "string") return result;
-    var pairs = argument.split(/[&;]/);
-    for (var j = 0; j < pairs.length; j += 1) {
-      var part = pairs[j];
-      if (!part) continue;
-      var eq = part.indexOf("=");
-      var key = eq >= 0 ? part.slice(0, eq) : part;
-      var value = eq >= 0 ? part.slice(eq + 1) : "true";
-      try {
-        result[decodeURIComponent(key)] = decodeURIComponent(value);
-      } catch (err2) {
-        result[key] = value;
-      }
-    }
-    return result;
-  }
-
-  function readScriptArguments() {
-    var out = {};
-    if (typeof $argument !== "undefined" && $argument != null) {
-      if (typeof $argument === "string") out = parseArgumentString($argument);
-      else if (typeof $argument === "object") {
-        for (var key in $argument) {
-          if (Object.prototype.hasOwnProperty.call($argument, key)) {
-            out[key] = $argument[key] == null ? "" : String($argument[key]);
-          }
-        }
-      } else {
-        out = parseArgumentString(String($argument));
-      }
-    }
-    return out;
-  }
-
   function isGzipBytes(bytes) {
     return bytes && bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
   }
@@ -629,37 +591,6 @@
     headers["Content-Type"] = "application/octet-stream";
     headers["Content-Length"] = String(length);
     return headers;
-  }
-
-  function decompressBody(body, contentEncoding) {
-    if (body == null) return body;
-    var enc = contentEncoding ? String(contentEncoding).toLowerCase() : "";
-    if (enc === "identity" || enc === "") return body;
-    try {
-      if (enc.indexOf("gzip") >= 0 && typeof $utils !== "undefined" && $utils.ungzip) return $utils.ungzip(body);
-      if (enc.indexOf("deflate") >= 0 && typeof $utils !== "undefined" && $utils.inflate) return $utils.inflate(body);
-      if (enc.indexOf("br") >= 0 && typeof $utils !== "undefined" && $utils.brotliDecompress) return $utils.brotliDecompress(body);
-    } catch (err) {}
-    return body;
-  }
-
-  function prepareResponseBodySync(config) {
-    var respHeaders = ($response && $response.headers) || {};
-    var contentEncoding = headerValue(respHeaders, "Content-Encoding");
-    var rawRespBody = $response && ($response.body != null ? $response.body : $response.bodyBytes);
-    var bytes = bodyToBytes(rawRespBody);
-    if (!bytes || bytes.length < 2) return;
-    if (isGzipBytes(bytes) || (contentEncoding && String(contentEncoding).toLowerCase().indexOf("gzip") >= 0)) {
-      var decoded = bodyToBytes(decompressBody(rawRespBody, contentEncoding || "gzip"));
-      if (decoded && decoded.length > 2 && !isGzipBytes(decoded)) {
-        $response.body = decoded;
-      }
-      return;
-    }
-    if (contentEncoding) {
-      var plain = bodyToBytes(decompressBody(rawRespBody, contentEncoding));
-      if (plain) $response.body = plain;
-    }
   }
 
   function donePassThrough() { $done({}); }
@@ -711,56 +642,69 @@
       return;
     }
 
-var STORE_KEY = "ios_spoofer_last_loc";
+    var STORE_KEY = "ios_spoofer_last_loc";
 
-function readLastLocation() {
-  if (typeof $persistentStore === "undefined" || !$persistentStore.read) return null;
-  try {
-    var raw = $persistentStore.read(STORE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    return null;
+    function readLastLocation() {
+      if (typeof $persistentStore === "undefined" || !$persistentStore.read) return null;
+      try {
+        var raw = $persistentStore.read(STORE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function saveLastLocation(loc) {
+      if (typeof $persistentStore === "undefined" || !$persistentStore.write) return;
+      try {
+        $persistentStore.write(JSON.stringify(loc), STORE_KEY);
+      } catch (e) {}
+    }
+
+    // Điểm trước đó (lần fake cũ)
+    var prevLoc = readLastLocation();
+
+    // Điểm mới (sau khi fake)
+    var randomLoc = pickRandomLocation();
+    var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
+
+    if (typeof $notification !== "undefined") {
+      // Thông báo 1: điểm trước
+      if (prevLoc && prevLoc.lat != null && prevLoc.lng != null) {
+        var prevDist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng);
+        $notification.post(
+          "📍 Trước khi fake",
+          "Cách gốc: " + prevDist + " m",
+          prevLoc.lat.toFixed(7) + ", " + prevLoc.lng.toFixed(7)
+        );
+      } else {
+        $notification.post(
+          "📍 Trước khi fake",
+          "Chưa có điểm cũ",
+          "Đây là lần chạy đầu"
+        );
+      }
+
+      // Thông báo 2: điểm sau khi fake
+      $notification.post(
+        "📍 Sau khi fake",
+        "Cách gốc: " + dist + " m",
+        randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7)
+      );
+    }
+
+    // Lưu điểm mới để lần sau thành "điểm trước"
+    saveLastLocation(randomLoc);
+
+    // Tiến hành thay đổi tọa độ trong gói tin Apple Location Response
+    var config = normalizeConfig({
+      latitude: randomLoc.lat,
+      longitude: randomLoc.lng
+    });
+
+    continueResponseRewrite(config);
   }
-}
 
-function saveLastLocation(loc) {
-  if (typeof $persistentStore === "undefined" || !$persistentStore.write) return;
-  try {
-    $persistentStore.write(JSON.stringify(loc), STORE_KEY);
-  } catch (e) {}
-}
-
-// Điểm trước đó (lần fake cũ)
-var prevLoc = readLastLocation();
-
-// Điểm mới (sau khi fake)
-var randomLoc = pickRandomLocation();
-var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
-
-if (typeof $notification !== "undefined") {
-  // Thông báo 1: điểm trước
-  if (prevLoc && prevLoc.lat != null && prevLoc.lng != null) {
-    var prevDist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng);
-    $notification.post(
-      "📍 Trước khi fake",
-      "Cách gốc: " + prevDist + " m",
-      prevLoc.lat.toFixed(7) + ", " + prevLoc.lng.toFixed(7)
-    );
-  } else {
-    $notification.post(
-      "📍 Trước khi fake",
-      "Chưa có điểm cũ",
-      "Đây là lần chạy đầu"
-    );
-  }
-
-  // Thông báo 2: điểm sau khi fake
-  $notification.post(
-    "📍 Sau khi fake",
-    "Cách gốc: " + dist + " m",
-    randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7)
-  );
-}
-
-// Lưu điểm mới để lần sau thành "điểm trước"
-saveLastLocation(randomLoc);
+  // Chạy ứng dụng
+  runShadowrocket();
+})();
