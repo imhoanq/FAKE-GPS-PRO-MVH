@@ -505,16 +505,16 @@
       var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
 
       // Gộp 2 Thông báo làm 1 để tránh quá tải IPC làm treo app
-      if (typeof $notification !== "undefined") {
-        var msgBefore = prevLoc ? (distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng) + "m (" + prevLoc.lat.toFixed(5) + ")") : "Lần đầu chạy";
-        var msgAfter = dist + "m (" + randomLoc.lat.toFixed(5) + ", " + randomLoc.lng.toFixed(5) + ")";
+     // Ghi nhận thông báo theo định dạng tối ưu (2 tham số)
+if (typeof $notification !== "undefined") {
+  var latFixed = randomLoc.lat.toFixed(5);
+  var lngFixed = randomLoc.lng.toFixed(5);
 
-        $notification.post(
-          "📍 Fake GPS Location",
-          "Trước: " + msgBefore,
-          "Sau: " + msgAfter
-        );
-      }
+  $notification.post(
+    "📍 GPS Spoofer thành công",
+    "Cách cửa hàng: " + dist + "m (" + latFixed + ", " + lngFixed + ")"
+  );
+}
 
       // Save điểm mới
       if (typeof $persistentStore !== "undefined" && $persistentStore.write) {
