@@ -1,6 +1,5 @@
 /*
- * iOS Location Spoofer - Dynamic Jitter (Anti-Fallback Fix)
- * Sửa lỗi vị trí bị nhảy về thực tế sau vài giây do dính lọc iOS CoreLocation.
+ * iOS Location Spoofer - Dynamic Jitter & Fixed Notification Cooldown
  */
 (function () {
   "use strict";
@@ -49,7 +48,6 @@
     return Math.round(R * c);
   }
 
-  // Tạo độ rung tự nhiên (Jitter) khoảng 0.5m - 1.5m để qua mặt lọc của iOS
   function addJitter(loc) {
     var latJitter = (Math.random() - 0.5) * 0.000015;
     var lngJitter = (Math.random() - 0.5) * 0.000015;
@@ -63,11 +61,14 @@
     var baseLoc = pickRandomBaseLocation();
     var finalLoc = addJitter(baseLoc);
 
-    // Gửi thông báo khi bốc điểm mới (chỉ bắn 1 lần mỗi khi kết nối mới)
+    // Xử lý logic thông báo theo thời gian (Cooldown 10s)
     if (typeof $persistentStore !== "undefined" && typeof $notification !== "undefined") {
-      var isNotified = $persistentStore.read("HAS_NOTIFIED_SESSION");
-      if (!isNotified) {
-        $persistentStore.write("1", "HAS_NOTIFIED_SESSION");
+      var lastNotifyTime = parseInt($persistentStore.read("LAST_NOTIFY_TIME") || "0", 10);
+      var now = Date.now();
+
+      // Chỉ gửi thông báo nếu lần gửi trước đã cách quá 10 giây (tránh spam)
+      if (now - lastNotifyTime > 10000) {
+        $persistentStore.write(now.toString(), "LAST_NOTIFY_TIME");
         var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, finalLoc.lat, finalLoc.lng);
         $notification.post(
           "📍 GPS SPOOFER ACTIVE!",
@@ -84,7 +85,7 @@
     mode: "response",
     latitude: DEFAULT_LAT,
     longitude: DEFAULT_LNG,
-    horizontalAccuracy: 10, // Giảm độ sai lệch xuống 10m để iOS ưu tiên tín hiệu WLoc
+    horizontalAccuracy: 10,
     verticalAccuracy: 5,
     altitude: 12,
     unknownValue4: 3,
