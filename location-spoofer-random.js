@@ -1,14 +1,10 @@
 /*
  * iOS Location Spoofer - Random Multi Location (1-20m)
- * Tự động giữ nguyên vị trí trong 5 phút mới đổi điểm mới
+ * Mỗi lần Tắt/Bật lại Shadowrocket sẽ tự bốc 1 vị trí ngẫu nhiên mới
  */
 (function () {
   "use strict";
 
-  // ===================== THIẾT LẬP THỜI GIAN ĐỔI VỊ TRÍ =====================
-  var CHANGE_INTERVAL_SECONDS = 600; // 300 giây = 5 phút (Bạn có thể sửa thành 60, 600...)
-
-  // ===================== 20 ĐIỂM RANDOM (1 - 20 MÉT SO VỚI GỐC) =====================
   // ===================== 20 ĐIỂM RANDOM (1 - 20 MÉT SO VỚI GỐC) =====================
   var RANDOM_LOCATIONS = [
     { lat: 16.0664550, lng: 108.2067300 }, // ~2m
@@ -35,6 +31,9 @@
 
   var DEFAULT_LAT = 16.0664334;
   var DEFAULT_LNG = 108.2067245;
+
+  // Biến lưu vị trí tạm thời trong 1 lần bật VPN (Memory Cache)
+  var currentSessionLoc = null;
 
   function pickRandomLocation() {
     return RANDOM_LOCATIONS[Math.floor(Math.random() * RANDOM_LOCATIONS.length)];
@@ -494,43 +493,21 @@
     }
 
     try {
-      var STORE_LOC_KEY = "spoofer_current_loc";
-      var STORE_TIME_KEY = "spoofer_last_time";
+      // Nếu là lần đầu ứng dụng chạy trong đợt bật VPN này -> Chọn 1 điểm mới
+      if (!currentSessionLoc) {
+        currentSessionLoc = pickRandomLocation();
 
-      var now = Math.floor(Date.now() / 1000);
-      var activeLoc = null;
+        // Gửi notification báo điểm mới
+        if (typeof $notification !== "undefined") {
+          var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, currentSessionLoc.lat, currentSessionLoc.lng);
+          var latFixed = currentSessionLoc.lat.toFixed(5);
+          var lngFixed = currentSessionLoc.lng.toFixed(5);
 
-      try {
-        var savedLoc = (typeof $persistentStore !== "undefined" && $persistentStore.read) ? $persistentStore.read(STORE_LOC_KEY) : null;
-        var savedTime = (typeof $persistentStore !== "undefined" && $persistentStore.read) ? $persistentStore.read(STORE_TIME_KEY) : null;
-        var lastTime = savedTime ? parseInt(savedTime, 10) : 0;
-
-        // Nếu chưa có vị trí hoặc đã quá 5 phút -> Đổi điểm mới và bắn notification
-        if (!savedLoc || (now - lastTime) > CHANGE_INTERVAL_SECONDS) {
-          activeLoc = pickRandomLocation();
-
-          if (typeof $persistentStore !== "undefined" && $persistentStore.write) {
-            $persistentStore.write(JSON.stringify(activeLoc), STORE_LOC_KEY);
-            $persistentStore.write(now.toString(), STORE_TIME_KEY);
-          }
-
-          // Gửi thông báo mẫu chuẩn
-          if (typeof $notification !== "undefined") {
-            var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, activeLoc.lat, activeLoc.lng);
-            var latFixed = activeLoc.lat.toFixed(5);
-            var lngFixed = activeLoc.lng.toFixed(5);
-
-            $notification.post(
-              "📍 GPS Spoofer thành công",
-              "Cách cửa hàng: " + dist + "m (" + latFixed + ", " + lngFixed + ")"
-            );
-          }
-        } else {
-          // Trong thời gian 5 phút -> Dùng lại vị trí cũ, không bắn thông báo nữa
-          activeLoc = JSON.parse(savedLoc);
+          $notification.post(
+            "📍 GPS Spoofer thành công",
+            "Cách cửa hàng: " + dist + "m (" + latFixed + ", " + lngFixed + ")"
+          );
         }
-      } catch (e) {
-        activeLoc = pickRandomLocation();
       }
 
       var responseBody = messageBodyToBytes($response);
@@ -540,8 +517,8 @@
       }
 
       var responseResult = spoofAppleResponse(responseBody, {
-        latitude: activeLoc.lat,
-        longitude: activeLoc.lng
+        latitude: currentSessionLoc.lat,
+        longitude: currentSessionLoc.lng
       });
 
       doneRewriteResponse(responseResult.response);
