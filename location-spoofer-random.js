@@ -6,28 +6,28 @@
 (function () {
   "use strict";
 
-  // ===================== 10 ĐIỂM RANDOM 1-15m =====================
+  // ===================== 20 ĐIỂM RANDOM =====================
   var RANDOM_LOCATIONS = [
-    { lat: 16.0664500, lng: 108.2067400 }, // Cách A ~2m  (Cách Gốc max ~11m)
-    { lat: 16.0663850, lng: 108.2066800 }, // Cách A ~7m  (Cách Gốc max ~16m)
-    { lat: 16.0665200, lng: 108.2066500 }, // Cách A ~12m (Cách Gốc max ~21m)
-    { lat: 16.0663100, lng: 108.2068100 }, // Cách A ~16m (Cách Gốc max ~25m)
-    { lat: 16.0665800, lng: 108.2067700 }, // Cách A ~17m (Cách Gốc max ~26m)
-    { lat: 16.0662700, lng: 108.2066200 }, // Cách A ~21m (Cách Gốc max ~30m)
-    { lat: 16.0666200, lng: 108.2066100 }, // Cách A ~24m (Cách Gốc max ~33m)
-    { lat: 16.0662200, lng: 108.2068400 }, // Cách A ~26m (Cách Gốc max ~35m)
-    { lat: 16.0666500, lng: 108.2068200 }, // Cách A ~26m (Cách Gốc max ~35m)
-    { lat: 16.0661900, lng: 108.2066100 }, // Cách A ~29m (Cách Gốc max ~38m)
-    { lat: 16.0664334, lng: 108.2070000 }, // Cách A ~29m (Cách Gốc max ~38m)
-    { lat: 16.0666800, lng: 108.2066200 }, // Cách A ~30m (Cách Gốc max ~39m)
-    { lat: 16.0661700, lng: 108.2067700 }, // Cách A ~30m (Cách Gốc max ~39m)
-    { lat: 16.0664334, lng: 108.2064300 }, // Cách A ~31m (Cách Gốc max ~40m)
-    { lat: 16.0667000, lng: 108.2068300 }, // Cách A ~31m (Cách Gốc max ~40m)
-    { lat: 16.0661500, lng: 108.2066500 }, // Cách A ~32m (Cách Gốc max ~41m)
-    { lat: 16.0664800, lng: 108.2070300 }, // Cách A ~33m (Cách Gốc max ~42m)
-    { lat: 16.0667200, lng: 108.2066800 }, // Cách A ~32m (Cách Gốc max ~41m)
-    { lat: 16.0661300, lng: 108.2067800 }, // Cách A ~34m (Cách Gốc max ~43m)
-    { lat: 16.0664334, lng: 108.2063900 }  // Cách A ~36m (Cách Gốc max ~45m)
+    { lat: 16.0664500, lng: 108.2067400 },
+    { lat: 16.0663850, lng: 108.2066800 },
+    { lat: 16.0665200, lng: 108.2066500 },
+    { lat: 16.0663100, lng: 108.2068100 },
+    { lat: 16.0665800, lng: 108.2067700 },
+    { lat: 16.0662700, lng: 108.2066200 },
+    { lat: 16.0666200, lng: 108.2066100 },
+    { lat: 16.0662200, lng: 108.2068400 },
+    { lat: 16.0666500, lng: 108.2068200 },
+    { lat: 16.0661900, lng: 108.2066100 },
+    { lat: 16.0664334, lng: 108.2070000 },
+    { lat: 16.0666800, lng: 108.2066200 },
+    { lat: 16.0661700, lng: 108.2067700 },
+    { lat: 16.0664334, lng: 108.2064300 },
+    { lat: 16.0667000, lng: 108.2068300 },
+    { lat: 16.0661500, lng: 108.2066500 },
+    { lat: 16.0664800, lng: 108.2070300 },
+    { lat: 16.0667200, lng: 108.2066800 },
+    { lat: 16.0661300, lng: 108.2067800 },
+    { lat: 16.0664334, lng: 108.2063900 }
   ];
 
   var DEFAULT_LAT = 16.0664334;
@@ -77,9 +77,7 @@
     1: true, 2: true, 3: true, 4: true, 5: true, 6: true, 11: true, 12: true
   };
 
-  function bytesFromArray(values) {
-    return new Uint8Array(values);
-  }
+  function bytesFromArray(values) { return new Uint8Array(values); }
 
   function concatBytes(parts) {
     var total = 0, i;
@@ -118,38 +116,6 @@
     var out = new Uint8Array(value.length);
     for (var i = 0; i < value.length; i += 1) out[i] = value.charCodeAt(i) & 0xff;
     return out;
-  }
-
-  function bytesToBinaryString(bytes) {
-    var chunkSize = 0x8000, chunks = [];
-    for (var i = 0; i < bytes.length; i += chunkSize) {
-      var chunk = bytes.subarray(i, i + chunkSize);
-      chunks.push(String.fromCharCode.apply(null, Array.prototype.slice.call(chunk)));
-    }
-    return chunks.join("");
-  }
-
-  function bytesToBase64(bytes) {
-    var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    var out = "";
-    for (var i = 0; i < bytes.length; i += 3) {
-      var b0 = bytes[i];
-      var b1 = i + 1 < bytes.length ? bytes[i + 1] : 0;
-      var b2 = i + 2 < bytes.length ? bytes[i + 2] : 0;
-      var triplet = (b0 << 16) | (b1 << 8) | b2;
-      out += alphabet[(triplet >> 18) & 0x3f];
-      out += alphabet[(triplet >> 12) & 0x3f];
-      out += i + 1 < bytes.length ? alphabet[(triplet >> 6) & 0x3f] : "=";
-      out += i + 2 < bytes.length ? alphabet[triplet & 0x3f] : "=";
-    }
-    return out;
-  }
-
-  function hexPreview(bytes, limit) {
-    if (!bytes) return "<none>";
-    var out = [], max = Math.min(bytes.length, limit || 16);
-    for (var i = 0; i < max; i += 1) out.push(("0" + bytes[i].toString(16)).slice(-2));
-    return out.join("");
   }
 
   function bodyToBytes(body) {
@@ -271,64 +237,9 @@
     return fields;
   }
 
-  function firstFieldByNumber(fields, fieldNumber) {
-    for (var i = 0; i < fields.length; i += 1) {
-      if (fields[i].fieldNumber === fieldNumber) return fields[i];
-    }
-    return null;
-  }
+  function isCellResponseField(fieldNumber) { return CELL_RESPONSE_FIELDS[fieldNumber] === true; }
 
-  function signedVarintFieldValue(field) {
-    if (!field || field.wireType !== 0) return null;
-    return BigInt.asIntN(64, decodeVarint(field.valueBytes, 0).value);
-  }
-
-  function locationSummary(locationPayload) {
-    try {
-      var fields = parseFields(locationPayload);
-      var lat = signedVarintFieldValue(firstFieldByNumber(fields, 1));
-      var lon = signedVarintFieldValue(firstFieldByNumber(fields, 2));
-      if (lat == null || lon == null) return "<missing>";
-      return (Number(lat) / 100000000).toFixed(8) + "," + (Number(lon) / 100000000).toFixed(8);
-    } catch (err) {
-      return "<parse-failed:" + err.message + ">";
-    }
-  }
-
-  function patchedPayloadSummary(payload) {
-    try {
-      var rootFields = parseFields(payload);
-      var parts = [];
-      var wifi = firstFieldByNumber(rootFields, 2);
-      if (wifi && wifi.wireType === 2) {
-        var wifiLocation = firstFieldByNumber(parseFields(wifi.valueBytes), 2);
-        parts.push("firstWifi=" + (wifiLocation ? locationSummary(wifiLocation.valueBytes) : "<missing>"));
-      }
-      var cell = firstCellResponseField(rootFields);
-      if (cell && cell.wireType === 2) {
-        var cellLocation = firstFieldByNumber(parseFields(cell.valueBytes), 5);
-        parts.push("firstCell=" + (cellLocation ? locationSummary(cellLocation.valueBytes) : "<missing>"));
-      }
-      return parts.length ? parts.join(", ") : "no wifi/cell location fields";
-    } catch (err) {
-      return "summary failed: " + err.message;
-    }
-  }
-
-  function isCellResponseField(fieldNumber) {
-    return CELL_RESPONSE_FIELDS[fieldNumber] === true;
-  }
-
-  function firstCellResponseField(fields) {
-    for (var i = 0; i < fields.length; i += 1) {
-      if (isCellResponseField(fields[i].fieldNumber)) return fields[i];
-    }
-    return null;
-  }
-
-  function coordToInt(value) {
-    return Math.trunc(Number(value) * 100000000);
-  }
+  function coordToInt(value) { return Math.trunc(Number(value) * 100000000); }
 
   function parseBoolean(value, defaultValue) {
     if (value === true || value === false) return value;
@@ -351,19 +262,8 @@
     }
     cfg.enabled = parseBoolean(cfg.enabled, true);
     cfg.failOpen = parseBoolean(cfg.failOpen, true);
-    var mode = String(cfg.mode || "response").toLowerCase();
-    cfg.mode = mode === "request" || mode === "prepare" || mode === "probe" || mode === "inspect" ? mode : "response";
     cfg.latitude = Number(cfg.latitude);
     cfg.longitude = Number(cfg.longitude);
-    cfg.horizontalAccuracy = Math.trunc(Number(cfg.horizontalAccuracy));
-    cfg.verticalAccuracy = Math.trunc(Number(cfg.verticalAccuracy));
-    cfg.altitude = Math.trunc(Number(cfg.altitude));
-    cfg.unknownValue4 = Math.trunc(Number(cfg.unknownValue4));
-    cfg.motionActivityType = Math.trunc(Number(cfg.motionActivityType));
-    cfg.motionActivityConfidence = Math.trunc(Number(cfg.motionActivityConfidence));
-    cfg.debug = parseBoolean(cfg.debug, false);
-    if (!Number.isFinite(cfg.latitude) || cfg.latitude < -90 || cfg.latitude > 90) throw new Error("invalid latitude");
-    if (!Number.isFinite(cfg.longitude) || cfg.longitude < -180 || cfg.longitude > 180) throw new Error("invalid longitude");
     return cfg;
   }
 
@@ -553,28 +453,7 @@
     } else {
       response = buildAppleWLocResponse(patched.payload, extraction.prefix);
     }
-    return {
-      response: response, payload: patched.payload,
-      wifiCount: patched.wifiCount, cellCount: patched.cellCount,
-      kind: extraction.kind
-    };
-  }
-
-  function isGzipBytes(bytes) {
-    return bytes && bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
-  }
-
-  function isLoonRuntime() {
-    return typeof $loon !== "undefined";
-  }
-
-  function headerValue(headers, name) {
-    if (!headers) return undefined;
-    var lower = name.toLowerCase();
-    for (var key in headers) {
-      if (Object.prototype.hasOwnProperty.call(headers, key) && key.toLowerCase() === lower) return headers[key];
-    }
-    return undefined;
+    return { response: response };
   }
 
   function headersWithBinaryBody(sourceHeaders, length) {
@@ -595,116 +474,70 @@
 
   function donePassThrough() { $done({}); }
 
-  function doneRewriteResponse(bytes, info) {
+  function doneRewriteResponse(bytes) {
     var sourceHeaders = typeof $response !== "undefined" ? $response.headers : {};
     var headers = headersWithBinaryBody(sourceHeaders, bytes.length);
-    if (info && info.debug) {
-      headers["X-Location-Spoofer-Wifi-Count"] = String(info.wifiCount);
-      headers["X-Location-Spoofer-Cell-Count"] = String(info.cellCount || 0);
-    }
-    if (info && info.targetLat != null && info.targetLng != null) {
-      headers["X-Location-Spoofer-Target"] = String(info.targetLat) + "," + String(info.targetLng);
-    }
-    if (isLoonRuntime()) {
+    if (typeof $loon !== "undefined") {
       $done({ status: ($response && $response.status) || 200, headers: headers, body: bytes });
       return;
     }
     $done({ headers: headers, body: bytes });
   }
 
-  function continueResponseRewrite(config) {
-    var responseBody = messageBodyToBytes($response);
-    if (!responseBody || responseBody.length < 2) {
+  function runShadowrocket() {
+    if (typeof $response === "undefined" || !$response) {
       donePassThrough();
       return;
     }
-    var responseResult = spoofAppleResponse(responseBody, config);
-    doneRewriteResponse(responseResult.response, {
-      wifiCount: responseResult.wifiCount,
-      cellCount: responseResult.cellCount,
-      debug: config.debug,
-      targetLat: config.latitude,
-      targetLng: config.longitude
-    });
-  }
 
-  function runShadowrocket() {
-    var hasRequest = typeof $request !== "undefined" && $request != null;
-    var hasResponse = typeof $response !== "undefined" && $response != null;
+    try {
+      var STORE_KEY = "ios_spoofer_last_loc";
+      var prevLoc = null;
 
-    if (!hasRequest && !hasResponse) {
-      $done({});
-      return;
-    }
-
-    if (hasRequest && !hasResponse) {
-      $done({});
-      return;
-    }
-
-    var STORE_KEY = "ios_spoofer_last_loc";
-
-    function readLastLocation() {
-      if (typeof $persistentStore === "undefined" || !$persistentStore.read) return null;
-      try {
-        var raw = $persistentStore.read(STORE_KEY);
-        return raw ? JSON.parse(raw) : null;
-      } catch (e) {
-        return null;
+      if (typeof $persistentStore !== "undefined" && $persistentStore.read) {
+        try {
+          var raw = $persistentStore.read(STORE_KEY);
+          prevLoc = raw ? JSON.parse(raw) : null;
+        } catch (e) {}
       }
-    }
 
-    function saveLastLocation(loc) {
-      if (typeof $persistentStore === "undefined" || !$persistentStore.write) return;
-      try {
-        $persistentStore.write(JSON.stringify(loc), STORE_KEY);
-      } catch (e) {}
-    }
+      var randomLoc = pickRandomLocation();
+      var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
 
-    // Điểm trước đó (lần fake cũ)
-    var prevLoc = readLastLocation();
+      // Gộp 2 Thông báo làm 1 để tránh quá tải IPC làm treo app
+      if (typeof $notification !== "undefined") {
+        var msgBefore = prevLoc ? (distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng) + "m (" + prevLoc.lat.toFixed(5) + ")") : "Lần đầu chạy";
+        var msgAfter = dist + "m (" + randomLoc.lat.toFixed(5) + ", " + randomLoc.lng.toFixed(5) + ")";
 
-    // Điểm mới (sau khi fake)
-    var randomLoc = pickRandomLocation();
-    var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
-
-    if (typeof $notification !== "undefined") {
-      // Thông báo 1: điểm trước
-      if (prevLoc && prevLoc.lat != null && prevLoc.lng != null) {
-        var prevDist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng);
         $notification.post(
-          "📍 Trước khi fake",
-          "Cách gốc: " + prevDist + " m",
-          prevLoc.lat.toFixed(7) + ", " + prevLoc.lng.toFixed(7)
-        );
-      } else {
-        $notification.post(
-          "📍 Trước khi fake",
-          "Chưa có điểm cũ",
-          "Đây là lần chạy đầu"
+          "📍 Fake GPS Location",
+          "Trước: " + msgBefore,
+          "Sau: " + msgAfter
         );
       }
 
-      // Thông báo 2: điểm sau khi fake
-      $notification.post(
-        "📍 Sau khi fake",
-        "Cách gốc: " + dist + " m",
-        randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7)
-      );
+      // Save điểm mới
+      if (typeof $persistentStore !== "undefined" && $persistentStore.write) {
+        try { $persistentStore.write(JSON.stringify(randomLoc), STORE_KEY); } catch (e) {}
+      }
+
+      var responseBody = messageBodyToBytes($response);
+      if (!responseBody || responseBody.length < 2) {
+        donePassThrough();
+        return;
+      }
+
+      var responseResult = spoofAppleResponse(responseBody, {
+        latitude: randomLoc.lat,
+        longitude: randomLoc.lng
+      });
+
+      doneRewriteResponse(responseResult.response);
+    } catch (err) {
+      // Bọc Fail-safe để tránh treo kết nối mạng khi đụng gói tin lạ
+      donePassThrough();
     }
-
-    // Lưu điểm mới để lần sau thành "điểm trước"
-    saveLastLocation(randomLoc);
-
-    // Tiến hành thay đổi tọa độ trong gói tin Apple Location Response
-    var config = normalizeConfig({
-      latitude: randomLoc.lat,
-      longitude: randomLoc.lng
-    });
-
-    continueResponseRewrite(config);
   }
 
-  // Chạy ứng dụng
   runShadowrocket();
 })();
