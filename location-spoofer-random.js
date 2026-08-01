@@ -1,11 +1,11 @@
 /*
- * iOS Location Spoofer - Always Random On Connection
- * Tự động chọn tọa độ mới ngay khi có kết nối VPN mới.
+ * iOS Location Spoofer - Dynamic Jitter (Anti-Fallback Fix)
+ * Sửa lỗi vị trí bị nhảy về thực tế sau vài giây do dính lọc iOS CoreLocation.
  */
 (function () {
   "use strict";
 
-  // ===================== 20 ĐIỂM RANDOM (1 - 20 MÉT SO VỚI GỐC) =====================
+  // ===================== 20 ĐIỂM GỐC DANH SÁCH =====================
   var RANDOM_LOCATIONS = [
     { lat: 16.0664550, lng: 108.2067300 },
     { lat: 16.0664150, lng: 108.2067100 },
@@ -32,7 +32,7 @@
   var DEFAULT_LAT = 16.0664334;
   var DEFAULT_LNG = 108.2067245;
 
-  function pickRandomLocation() {
+  function pickRandomBaseLocation() {
     return RANDOM_LOCATIONS[Math.floor(Math.random() * RANDOM_LOCATIONS.length)];
   }
 
@@ -49,35 +49,34 @@
     return Math.round(R * c);
   }
 
-  // ===================== BỐC TỌA ĐỘ MỚI =====================
-  function getSessionLocation() {
-    if (typeof $persistentStore === "undefined") {
-      return pickRandomLocation();
+  // Tạo độ rung tự nhiên (Jitter) khoảng 0.5m - 1.5m để qua mặt lọc của iOS
+  function addJitter(loc) {
+    var latJitter = (Math.random() - 0.5) * 0.000015;
+    var lngJitter = (Math.random() - 0.5) * 0.000015;
+    return {
+      lat: loc.lat + latJitter,
+      lng: loc.lng + lngJitter
+    };
+  }
+
+  function getDynamicLocation() {
+    var baseLoc = pickRandomBaseLocation();
+    var finalLoc = addJitter(baseLoc);
+
+    // Gửi thông báo khi bốc điểm mới (chỉ bắn 1 lần mỗi khi kết nối mới)
+    if (typeof $persistentStore !== "undefined" && typeof $notification !== "undefined") {
+      var isNotified = $persistentStore.read("HAS_NOTIFIED_SESSION");
+      if (!isNotified) {
+        $persistentStore.write("1", "HAS_NOTIFIED_SESSION");
+        var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, finalLoc.lat, finalLoc.lng);
+        $notification.post(
+          "📍 GPS SPOOFER ACTIVE!",
+          "Cách cửa hàng: " + dist + "m (" + finalLoc.lat.toFixed(5) + ", " + finalLoc.lng.toFixed(5) + ")"
+        );
+      }
     }
 
-    var storedLocStr = $persistentStore.read("SPOOF_LOCATION_DATA");
-
-    // Nếu đã có tọa độ lưu trong phiên làm việc hiện tại của Shadowrocket thì giữ nguyên
-    if (storedLocStr) {
-      try {
-        return JSON.parse(storedLocStr);
-      } catch (e) {}
-    }
-
-    // Nếu chưa có (mới Bật VPN hoặc vừa reset phiên) -> Tạo tọa độ mới ngẫu nhiên
-    var newLoc = pickRandomLocation();
-    $persistentStore.write(JSON.stringify(newLoc), "SPOOF_LOCATION_DATA");
-
-    // Bắn thông báo lên màn hình báo điểm mới đã được chọn
-    if (typeof $notification !== "undefined") {
-      var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, newLoc.lat, newLoc.lng);
-      $notification.post(
-        "📍 GPS CONNECTED!",
-        "Cách cửa hàng: " + dist + "m (" + newLoc.lat.toFixed(5) + ", " + newLoc.lng.toFixed(5) + ")"
-      );
-    }
-
-    return newLoc;
+    return finalLoc;
   }
 
   var DEFAULT_CONFIG = {
@@ -85,9 +84,9 @@
     mode: "response",
     latitude: DEFAULT_LAT,
     longitude: DEFAULT_LNG,
-    horizontalAccuracy: 15,
-    verticalAccuracy: 10,
-    altitude: 15,
+    horizontalAccuracy: 10, // Giảm độ sai lệch xuống 10m để iOS ưu tiên tín hiệu WLoc
+    verticalAccuracy: 5,
+    altitude: 12,
     unknownValue4: 3,
     motionActivityType: 63,
     motionActivityConfidence: 467,
@@ -516,7 +515,7 @@
     }
 
     try {
-      var currentLoc = getSessionLocation();
+      var currentLoc = getDynamicLocation();
 
       var responseBody = messageBodyToBytes($response);
       if (!responseBody || responseBody.length < 2) {
