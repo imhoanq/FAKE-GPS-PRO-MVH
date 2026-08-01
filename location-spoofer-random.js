@@ -611,29 +611,42 @@
     config.longitude = randomLoc.lng;
 
     var dist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, randomLoc.lat, randomLoc.lng);
-    var prevLoc = readLastLocation();
 
-    // Gửi 1 Push Notification duy nhất gộp điểm cũ & điểm mới để tránh iOS Rate Limit
-    if (typeof $notification !== "undefined") {
-      var subtitleText = "Lần chạy đầu tiên";
-      var bodyText = "👉 Mới: " + randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7) + " (" + dist + "m)";
-
-      if (prevLoc && prevLoc.lat != null && prevLoc.lng != null) {
-        var prevDist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng);
-        subtitleText = "Cũ: " + prevDist + "m ➔ Mới: " + dist + "m";
-        bodyText = "📍 Cũ: " + prevLoc.lat.toFixed(6) + ", " + prevLoc.lng.toFixed(6) + 
-                   "\n📍 Mới: " + randomLoc.lat.toFixed(6) + ", " + randomLoc.lng.toFixed(6);
-      }
-
-      $notification.post(
-        "📍 Fake GPS Location",
-        subtitleText,
-        bodyText
-      );
+    // Bọc an toàn tuyệt đối khi đọc vị trí cũ
+    var prevLoc = null;
+    try {
+      prevLoc = readLastLocation();
+    } catch (e) {
+      prevLoc = null;
     }
 
-    // Lưu lại vị trí để làm điểm cũ cho lần sau
-    saveLastLocation(randomLoc);
+    // Gửi Push Notification
+    try {
+      if (typeof $notification !== "undefined" && $notification.post) {
+        var subtitleText = "Lần chạy đầu tiên";
+        var bodyText = "👉 Mới: " + randomLoc.lat.toFixed(7) + ", " + randomLoc.lng.toFixed(7) + " (" + dist + "m)";
+
+        if (prevLoc && prevLoc.lat != null && prevLoc.lng != null) {
+          var prevDist = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, prevLoc.lat, prevLoc.lng);
+          subtitleText = "Cũ: " + prevDist + "m ➔ Mới: " + dist + "m";
+          bodyText = "📍 Cũ: " + prevLoc.lat.toFixed(6) + ", " + prevLoc.lng.toFixed(6) + 
+                     "\n📍 Mới: " + randomLoc.lat.toFixed(6) + ", " + randomLoc.lng.toFixed(6);
+        }
+
+        $notification.post(
+          "📍 Fake GPS Location",
+          subtitleText,
+          bodyText
+        );
+      }
+    } catch (errNoti) {
+      // Bỏ qua lỗi notification nếu có
+    }
+
+    // Lưu lại vị trí cho lần sau
+    try {
+      saveLastLocation(randomLoc);
+    } catch (e) {}
 
     // Thực thi rewrite gói tin vị trí
     continueResponseRewrite(config);
