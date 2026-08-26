@@ -59,30 +59,52 @@
   }
 
   function getDynamicLocation() {
-    var baseLoc = pickRandomBaseLocation();
-    var finalLoc = addJitter(baseLoc);
+    // ===================== SESSION LOCATION =====================
+    // Random đúng 1 lần rồi lưu lại.
+    // Các request sau luôn dùng đúng tọa độ đã lưu, không tự đổi vị trí.
+    var savedLat = 0;
+    var savedLng = 0;
 
-    // Xử lý thông báo thông minh: So sánh khoảng cách dịch chuyển so với lần thông báo trước
-    if (typeof $persistentStore !== "undefined" && typeof $notification !== "undefined") {
-      var lastLat = parseFloat($persistentStore.read("LAST_NOTIFY_LAT") || "0");
-      var lastLng = parseFloat($persistentStore.read("LAST_NOTIFY_LNG") || "0");
-
-      var movedDistance = distanceMeters(lastLat, lastLng, finalLoc.lat, finalLoc.lng);
-
-      // Chỉ gửi thông báo nếu vị trí mới lệch so with điểm đã thông báo trước đó trên 2 mét
-      if (movedDistance > 2) {
-        $persistentStore.write(finalLoc.lat.toString(), "LAST_NOTIFY_LAT");
-        $persistentStore.write(finalLoc.lng.toString(), "LAST_NOTIFY_LNG");
-
-        var distFromTarget = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, finalLoc.lat, finalLoc.lng);
-        $notification.post(
-          "📍 GPS SPOOFER ACTIVE!",
-          "Cách cửa hàng: " + distFromTarget + "m (" + finalLoc.lat.toFixed(5) + ", " + finalLoc.lng.toFixed(5) + ")"
-        );
-      }
+    if (typeof $persistentStore !== "undefined") {
+      savedLat = parseFloat($persistentStore.read("SESSION_FAKE_LAT") || "0");
+      savedLng = parseFloat($persistentStore.read("SESSION_FAKE_LNG") || "0");
     }
 
-    return finalLoc;
+    // Nếu chưa có tọa độ đã lưu thì random 1 lần.
+    if (!isFinite(savedLat) || !isFinite(savedLng) || savedLat === 0 || savedLng === 0) {
+      var baseLoc = pickRandomBaseLocation();
+      var finalLoc = addJitter(baseLoc);
+
+      if (typeof $persistentStore !== "undefined") {
+        $persistentStore.write(finalLoc.lat.toString(), "SESSION_FAKE_LAT");
+        $persistentStore.write(finalLoc.lng.toString(), "SESSION_FAKE_LNG");
+      }
+
+      // Chỉ thông báo ở lần tạo vị trí mới.
+      if (typeof $notification !== "undefined") {
+        var distFromTarget = distanceMeters(
+          DEFAULT_LAT,
+          DEFAULT_LNG,
+          finalLoc.lat,
+          finalLoc.lng
+        );
+
+        $notification.post(
+          "📍 FAKE GPS ĐÃ BẬT",
+          "Cách cửa hàng: " + distFromTarget + "m (" +
+            finalLoc.lat.toFixed(5) + ", " +
+            finalLoc.lng.toFixed(5) + ")"
+        );
+      }
+
+      return finalLoc;
+    }
+
+    // Đã có vị trí session -> giữ nguyên tuyệt đối.
+    return {
+      lat: savedLat,
+      lng: savedLng
+    };
   }
 
   var DEFAULT_CONFIG = {
