@@ -142,9 +142,12 @@
   }
 
   function endLocationSession() {
-    // Giữ tọa độ cũ để phiên sau có thể tránh chọn lại đúng điểm đó.
-    writeStoredValue("0", STORE_ACTIVE_KEY);
-  }
+  // Tắt phiên cũ để lần mở VPN sau tạo phiên mới
+  writeStoredValue("0", STORE_ACTIVE_KEY);
+
+  // Xóa trạng thái thông báo để lần sau hiện lại
+  writeStoredValue("", STORE_NOTIFY_KEY);
+}
 
   function notifyNewLocation(loc) {
   if (typeof $notification === "undefined") return;
