@@ -44,6 +44,7 @@
   var STORE_LAT_KEY = "SESSION_FAKE_LAT";
   var STORE_LNG_KEY = "SESSION_FAKE_LNG";
   var STORE_ACTIVE_KEY = "SESSION_FAKE_ACTIVE";
+  var STORE_NOTIFY_KEY = "SESSION_FAKE_LAST_NOTIFIED_LOCATION_V2";
   var MIN_NEW_LOCATION_DISTANCE_METERS = 1;
 
   function pickRandomBaseLocation() {
@@ -146,21 +147,28 @@
   }
 
   function notifyNewLocation(loc) {
-    if (typeof $notification === "undefined") return;
+  if (typeof $notification === "undefined") return;
 
-    var distanceToCafe = distanceMeters(
-      DEFAULT_LAT,
-      DEFAULT_LNG,
-      loc.lat,
-      loc.lng
-    );
+  var locationId = loc.lat.toFixed(7) + "," + loc.lng.toFixed(7);
 
-    $notification.post(
-      "📍 FAKE GPS ĐÃ BẬT",
-      "Cách " + CAFE_NAME + ": " + distanceToCafe + " mét",
-      "(" + loc.lat.toFixed(7) + " ; " + loc.lng.toFixed(7) + ")"
-    );
-  }
+  // Mỗi tọa độ chỉ thông báo một lần
+  if (readStoredValue(STORE_NOTIFY_KEY, "") === locationId) return;
+
+  var distanceToCafe = distanceMeters(
+    DEFAULT_LAT,
+    DEFAULT_LNG,
+    loc.lat,
+    loc.lng
+  );
+
+  $notification.post(
+    "📍 FAKE GPS ĐÃ BẬT",
+    "Cách " + CAFE_NAME + ": " + distanceToCafe + " mét",
+    "Tọa độ: " + loc.lat.toFixed(7) + ", " + loc.lng.toFixed(7)
+  );
+
+  writeStoredValue(locationId, STORE_NOTIFY_KEY);
+}
 
   var DEFAULT_CONFIG = {
     enabled: true,
@@ -615,10 +623,13 @@
       // Nếu patch lỗi, catch sẽ pass-through và phiên vẫn ở trạng thái chờ,
       // để request hợp lệ tiếp theo tiếp tục thử và có thể thông báo.
       if (currentLoc.isNew) {
-        commitNewLocation(currentLoc);
-        notifyNewLocation(currentLoc);
-      }
-      doneRewriteResponse(responseResult.response);
+  commitNewLocation(currentLoc);
+}
+
+// Luôn kiểm tra thông báo sau khi fake GPS thành công
+notifyNewLocation(currentLoc);
+
+doneRewriteResponse(responseResult.response);
     } catch (err) {
       donePassThrough();
     }
