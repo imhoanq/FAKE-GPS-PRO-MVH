@@ -151,7 +151,6 @@
 
   var locationId = loc.lat.toFixed(7) + "," + loc.lng.toFixed(7);
 
-  // Mỗi tọa độ chỉ thông báo một lần
   if (readStoredValue(STORE_NOTIFY_KEY, "") === locationId) return;
 
   var distanceToCafe = distanceMeters(
@@ -169,7 +168,6 @@
 
   writeStoredValue(locationId, STORE_NOTIFY_KEY);
 }
-
   var DEFAULT_CONFIG = {
     enabled: true,
     mode: "response",
@@ -626,7 +624,6 @@
   commitNewLocation(currentLoc);
 }
 
-// Luôn kiểm tra thông báo sau khi fake GPS thành công
 notifyNewLocation(currentLoc);
 
 doneRewriteResponse(responseResult.response);
