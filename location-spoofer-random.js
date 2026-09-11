@@ -1,6 +1,13 @@
 /*
- * iOS Location Spoofer - Smart Notification Trigger
- * Chỉ bắn thông báo khi tọa độ thực sự thay đổi (> 2m) hoặc khi reset VPN.
+ * iOS Location Spoofer - Session Location + VPN Reset
+ *
+ * - Trong cùng một phiên VPN: luôn giữ nguyên một tọa độ.
+ * - Khi nhận sự kiện network-changed: kết thúc phiên hiện tại.
+ * - Ở request định vị đầu tiên của phiên mới: cách vị trí cũ ít nhất 1m.
+ * - Chỉ thông báo sau khi dữ liệu định vị đã được sửa thành công.
+ *
+ * LƯU Ý: Ngoài rule http-response hiện tại, cần gọi chính file này bằng một
+ * event script "network-changed" thì script mới biết VPN/mạng vừa được bật lại.
  */
 (function () {
   "use strict";
@@ -29,14 +36,21 @@
     { lat: 16.0664334, lng: 108.2065369 }
   ];
 
+  // Tọa độ mốc của Cà Phê Muối Chú Long dùng để tính khoảng cách.
+  var CAFE_NAME = "Cà Phê Muối Chú Long";
   var DEFAULT_LAT = 16.0664334;
   var DEFAULT_LNG = 108.2067245;
+
+  var STORE_LAT_KEY = "SESSION_FAKE_LAT";
+  var STORE_LNG_KEY = "SESSION_FAKE_LNG";
+  var STORE_ACTIVE_KEY = "SESSION_FAKE_ACTIVE";
+  var MIN_NEW_LOCATION_DISTANCE_METERS = 1;
 
   function pickRandomBaseLocation() {
     return RANDOM_LOCATIONS[Math.floor(Math.random() * RANDOM_LOCATIONS.length)];
   }
 
-  function distanceMeters(lat1, lng1, lat2, lng2) {
+  function distanceMetersExact(lat1, lng1, lat2, lng2) {
     var R = 6371000;
     var toRad = Math.PI / 180;
     var dLat = (lat2 - lat1) * toRad;
@@ -46,7 +60,11 @@
       Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) *
       Math.sin(dLng / 2) * Math.sin(dLng / 2);
     var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return Math.round(R * c);
+    return R * c;
+  }
+
+  function distanceMeters(lat1, lng1, lat2, lng2) {
+    return Math.round(distanceMetersExact(lat1, lng1, lat2, lng2));
   }
 
   function addJitter(loc) {
@@ -58,53 +76,86 @@
     };
   }
 
+  function readStoredValue(key, fallback) {
+    if (typeof $persistentStore === "undefined") return fallback;
+    var value = $persistentStore.read(key);
+    return value == null || value === "" ? fallback : value;
+  }
+
+  function writeStoredValue(value, key) {
+    if (typeof $persistentStore !== "undefined") {
+      $persistentStore.write(String(value), key);
+    }
+  }
+
+  function createNewLocation(previousLat, previousLng) {
+    var candidate;
+    var attempts = 0;
+
+    do {
+      candidate = addJitter(pickRandomBaseLocation());
+      attempts += 1;
+    } while (
+      attempts < 50 &&
+      isFinite(previousLat) &&
+      isFinite(previousLng) &&
+      previousLat !== 0 &&
+      previousLng !== 0 &&
+      distanceMetersExact(previousLat, previousLng, candidate.lat, candidate.lng) <
+        MIN_NEW_LOCATION_DISTANCE_METERS
+    );
+
+    return candidate;
+  }
+
   function getDynamicLocation() {
     // ===================== SESSION LOCATION =====================
     // Random đúng 1 lần rồi lưu lại.
     // Các request sau luôn dùng đúng tọa độ đã lưu, không tự đổi vị trí.
-    var savedLat = 0;
-    var savedLng = 0;
+    var savedLat = parseFloat(readStoredValue(STORE_LAT_KEY, "0"));
+    var savedLng = parseFloat(readStoredValue(STORE_LNG_KEY, "0"));
+    var sessionActive = readStoredValue(STORE_ACTIVE_KEY, "0") === "1";
 
-    if (typeof $persistentStore !== "undefined") {
-      savedLat = parseFloat($persistentStore.read("SESSION_FAKE_LAT") || "0");
-      savedLng = parseFloat($persistentStore.read("SESSION_FAKE_LNG") || "0");
+    // Phiên còn hoạt động và tọa độ hợp lệ -> giữ nguyên tuyệt đối.
+    if (
+      sessionActive &&
+      isFinite(savedLat) &&
+      isFinite(savedLng) &&
+      savedLat !== 0 &&
+      savedLng !== 0
+    ) {
+      return { lat: savedLat, lng: savedLng, isNew: false };
     }
 
-    // Nếu chưa có tọa độ đã lưu thì random 1 lần.
-    if (!isFinite(savedLat) || !isFinite(savedLng) || savedLat === 0 || savedLng === 0) {
-      var baseLoc = pickRandomBaseLocation();
-      var finalLoc = addJitter(baseLoc);
+    // Phiên mới -> tạo vị trí cách vị trí phiên trước ít nhất 1m.
+    var finalLoc = createNewLocation(savedLat, savedLng);
+    writeStoredValue(finalLoc.lat, STORE_LAT_KEY);
+    writeStoredValue(finalLoc.lng, STORE_LNG_KEY);
+    writeStoredValue("1", STORE_ACTIVE_KEY);
 
-      if (typeof $persistentStore !== "undefined") {
-        $persistentStore.write(finalLoc.lat.toString(), "SESSION_FAKE_LAT");
-        $persistentStore.write(finalLoc.lng.toString(), "SESSION_FAKE_LNG");
-      }
+    return { lat: finalLoc.lat, lng: finalLoc.lng, isNew: true };
+  }
 
-      // Chỉ thông báo ở lần tạo vị trí mới.
-      if (typeof $notification !== "undefined") {
-        var distFromTarget = distanceMeters(
-          DEFAULT_LAT,
-          DEFAULT_LNG,
-          finalLoc.lat,
-          finalLoc.lng
-        );
+  function endLocationSession() {
+    // Giữ tọa độ cũ để phiên sau có thể tránh chọn lại đúng điểm đó.
+    writeStoredValue("0", STORE_ACTIVE_KEY);
+  }
 
-        $notification.post(
-          "📍 FAKE GPS ĐÃ BẬT",
-          "Cách cửa hàng: " + distFromTarget + "m (" +
-            finalLoc.lat.toFixed(5) + ", " +
-            finalLoc.lng.toFixed(5) + ")"
-        );
-      }
+  function notifyNewLocation(loc) {
+    if (typeof $notification === "undefined") return;
 
-      return finalLoc;
-    }
+    var distanceToCafe = distanceMeters(
+      DEFAULT_LAT,
+      DEFAULT_LNG,
+      loc.lat,
+      loc.lng
+    );
 
-    // Đã có vị trí session -> giữ nguyên tuyệt đối.
-    return {
-      lat: savedLat,
-      lng: savedLng
-    };
+    $notification.post(
+      "📍 FAKE GPS ĐÃ BẬT",
+      "Cách " + CAFE_NAME + ": " + distanceToCafe + " mét",
+      "(" + loc.lat.toFixed(7) + " ; " + loc.lng.toFixed(7) + ")"
+    );
   }
 
   var DEFAULT_CONFIG = {
@@ -556,11 +607,24 @@
         longitude: currentLoc.lng
       });
 
+      if (currentLoc.isNew) notifyNewLocation(currentLoc);
       doneRewriteResponse(responseResult.response);
     } catch (err) {
       donePassThrough();
     }
   }
 
-  runShadowrocket();
+  function run() {
+    // Khi file được gọi bằng event script network-changed, đánh dấu phiên cũ
+    // đã kết thúc. Request định vị tiếp theo sẽ tạo một tọa độ mới.
+    if (typeof $event !== "undefined") {
+      endLocationSession();
+      $done();
+      return;
+    }
+
+    runShadowrocket();
+  }
+
+  run();
 })();
