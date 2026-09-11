@@ -127,13 +127,17 @@
       return { lat: savedLat, lng: savedLng, isNew: false };
     }
 
-    // Phiên mới -> tạo vị trí cách vị trí phiên trước ít nhất 1m.
+    // Phiên mới -> chỉ chuẩn bị vị trí mới. Chưa lưu/khóa phiên ở đây vì
+    // phản hồi định vị có thể không hợp lệ hoặc quá trình patch có thể lỗi.
+    // Chỉ commit sau khi spoofAppleResponse chạy thành công.
     var finalLoc = createNewLocation(savedLat, savedLng);
-    writeStoredValue(finalLoc.lat, STORE_LAT_KEY);
-    writeStoredValue(finalLoc.lng, STORE_LNG_KEY);
-    writeStoredValue("1", STORE_ACTIVE_KEY);
-
     return { lat: finalLoc.lat, lng: finalLoc.lng, isNew: true };
+  }
+
+  function commitNewLocation(loc) {
+    writeStoredValue(loc.lat, STORE_LAT_KEY);
+    writeStoredValue(loc.lng, STORE_LNG_KEY);
+    writeStoredValue("1", STORE_ACTIVE_KEY);
   }
 
   function endLocationSession() {
@@ -607,7 +611,13 @@
         longitude: currentLoc.lng
       });
 
-      if (currentLoc.isNew) notifyNewLocation(currentLoc);
+      // Chỉ lưu phiên và thông báo sau khi dữ liệu đã được patch thành công.
+      // Nếu patch lỗi, catch sẽ pass-through và phiên vẫn ở trạng thái chờ,
+      // để request hợp lệ tiếp theo tiếp tục thử và có thể thông báo.
+      if (currentLoc.isNew) {
+        commitNewLocation(currentLoc);
+        notifyNewLocation(currentLoc);
+      }
       doneRewriteResponse(responseResult.response);
     } catch (err) {
       donePassThrough();
