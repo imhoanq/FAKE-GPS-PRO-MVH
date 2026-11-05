@@ -1,7 +1,4 @@
-/*
- * iOS Location Spoofer - Smart Notification Trigger
- * Chỉ bắn thông báo khi tọa độ thực sự thay đổi (> 2m) hoặc khi reset VPN.
- */
+/* Experimental Shadowrocket V6. Based on the supplied script. Not validated against live iOS 26.2 WLoc traffic. */
 (function () {
   "use strict";
 
@@ -58,31 +55,18 @@
     };
   }
 
+  // A stable 30-minute window, NOT a VPN session detector.
   function getDynamicLocation() {
-    var baseLoc = pickRandomBaseLocation();
-    var finalLoc = addJitter(baseLoc);
-
-    // Xử lý thông báo thông minh: So sánh khoảng cách dịch chuyển so với lần thông báo trước
-    if (typeof $persistentStore !== "undefined" && typeof $notification !== "undefined") {
-      var lastLat = parseFloat($persistentStore.read("LAST_NOTIFY_LAT") || "0");
-      var lastLng = parseFloat($persistentStore.read("LAST_NOTIFY_LNG") || "0");
-
-      var movedDistance = distanceMeters(lastLat, lastLng, finalLoc.lat, finalLoc.lng);
-
-      // Chỉ gửi thông báo nếu vị trí mới lệch so with điểm đã thông báo trước đó trên 2 mét
-      if (movedDistance > 2) {
-        $persistentStore.write(finalLoc.lat.toString(), "LAST_NOTIFY_LAT");
-        $persistentStore.write(finalLoc.lng.toString(), "LAST_NOTIFY_LNG");
-
-        var distFromTarget = distanceMeters(DEFAULT_LAT, DEFAULT_LNG, finalLoc.lat, finalLoc.lng);
-        $notification.post(
-          "📍 GPS SPOOFER ACTIVE!",
-          "Cách cửa hàng: " + distFromTarget + "m (" + finalLoc.lat.toFixed(5) + ", " + finalLoc.lng.toFixed(5) + ")"
-        );
-      }
-    }
-
-    return finalLoc;
+    var key = "GPS_V6_WINDOW", now = Date.now(), saved = null;
+    try { saved = JSON.parse($persistentStore.read(key) || "null"); } catch (_) {}
+    if (saved && Number.isFinite(saved.lat) && Number.isFinite(saved.lng) && now >= saved.time && now - saved.time < 1800000) return saved;
+    var candidates = RANDOM_LOCATIONS.filter(function (p) {
+      return !saved || p.lat !== saved.lat || p.lng !== saved.lng;
+    });
+    var loc = candidates[Math.floor(Math.random() * candidates.length)];
+    var result = {lat:loc.lat, lng:loc.lng, time:now};
+    if (typeof $persistentStore !== "undefined") $persistentStore.write(JSON.stringify(result), key);
+    return result;
   }
 
   var DEFAULT_CONFIG = {
@@ -324,7 +308,7 @@
         parts.push(field.raw);
       }
     }
-    if (!patchedLocation) parts.push(makeLengthDelimitedField(2, patchLocation(bytesFromArray([]), config)));
+    // No known location field: preserve record unchanged.
     return concatBytes(parts);
   }
 
@@ -339,7 +323,7 @@
         parts.push(field.raw);
       }
     }
-    if (!patchedLocation) parts.push(makeLengthDelimitedField(2, patchLocation(bytesFromArray([]), config)));
+    // No known location field: preserve record unchanged.
     return concatBytes(parts);
   }
 
@@ -353,7 +337,7 @@
       } else if (isCellResponseField(field.fieldNumber) && field.wireType === 2) {
         parts.push(makeLengthDelimitedField(field.fieldNumber, patchCellTower(field.valueBytes, config)));
         cellCount += 1;
-      } else if (!ROOT_DROP_FIELDS[field.fieldNumber]) {
+      } else {
         parts.push(field.raw);
       }
     }
@@ -429,28 +413,6 @@
         return { kind: "arpc", payload: arpc.payload, arpc: arpc };
       }
     } catch (e) {}
-    var markerIdx = findBytes(responseBytes, APPLE_WLOC_MARKER);
-    if (markerIdx >= 0) {
-      var lenOffset = markerIdx + APPLE_WLOC_MARKER.length;
-      if (lenOffset + 2 <= responseBytes.length) {
-        var realLen = readUInt16BE(responseBytes, lenOffset);
-        var realPayloadOffset = lenOffset + 2;
-        if (realLen > 0 && realPayloadOffset + realLen <= responseBytes.length) {
-          var candidatePayload = responseBytes.slice(realPayloadOffset, realPayloadOffset + realLen);
-          if (tryParseFields(candidatePayload) !== null) {
-            return {
-              kind: "marker", payload: candidatePayload,
-              prefix: responseBytes.slice(0, markerIdx),
-              markerAndLen: responseBytes.slice(markerIdx, realPayloadOffset),
-              suffix: responseBytes.slice(realPayloadOffset + realLen)
-            };
-          }
-        }
-      }
-    }
-    if (looksLikeAppleWLocPayload(responseBytes)) {
-      return { kind: "bare", payload: responseBytes };
-    }
     throw new Error("missing Apple WLoc response prefix");
   }
 
@@ -466,6 +428,7 @@
     var config = normalizeConfig(configInput);
     var extraction = extractAppleWLocPayload(responseBytes);
     var patched = patchAppleWLocPayload(extraction.payload, config);
+    if (patched.wifiCount + patched.cellCount === 0) throw new Error("No recognized Wi-Fi/cell records");
     var response;
     if (extraction.kind === "arpc") {
       var arpcOut = {
@@ -481,7 +444,7 @@
         newLenBytes, patched.payload, extraction.suffix
       ]);
     } else {
-      response = buildAppleWLocResponse(patched.payload, extraction.prefix);
+      response = extraction.kind === "bare" ? patched.payload : concatBytes([buildAppleWLocResponse(patched.payload, extraction.prefix), extraction.suffix || bytesFromArray([])]);
     }
     return { response: response };
   }
@@ -521,6 +484,8 @@
     }
 
     try {
+      var status = Number($response.status || $response.statusCode || 200);
+      if (status !== 200) throw new Error("HTTP status " + status);
       var currentLoc = getDynamicLocation();
 
       var responseBody = messageBodyToBytes($response);
@@ -534,8 +499,10 @@
         longitude: currentLoc.lng
       });
 
+      console.log("[GPS V6] Response rewritten; Maps acceptance is not verified. " + currentLoc.lat + "," + currentLoc.lng);
       doneRewriteResponse(responseResult.response);
     } catch (err) {
+      console.log("[GPS V6] Original response preserved: " + String(err));
       donePassThrough();
     }
   }
